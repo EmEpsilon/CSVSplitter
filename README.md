@@ -57,6 +57,12 @@
 * [Microsoft-WindowsAPICodePack-Shell](https://www.nuget.org/packages/Microsoft-WindowsAPICodePack-Shell/)
   - 出力先フォルダ指定の機能で使用
 
+# その他参考にしているサイト
+
+* secretbase.log [WPFアプリケーションをEXEひとつにまとめる](https://cointoss.hatenablog.com/entry/2017/02/21/121209)
+  - dllをexeにまとめる方法として参考にさせていただきました。
+  - 大本のサイト http://www.digitallycreated.net/Blog/61/combining-multiple-assemblies-into-a-single-exe-for-a-wpf-application
+
 ## 作者
 
 * [X](https://twitter.com/Em_epsilon)
