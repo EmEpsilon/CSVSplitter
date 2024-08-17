@@ -35,6 +35,9 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject>CSVSplitter.Program</StartupObject>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="CsvHelper, Version=33.0.0.0, Culture=neutral, PublicKeyToken=8c4959082be5c823, processorArchitecture=MSIL">
       <HintPath>..\packages\CsvHelper.33.0.1\lib\net462\CsvHelper.dll</HintPath>
@@ -104,6 +107,7 @@
     <Compile Include="Models\SplitItems.cs" />
     <Compile Include="Models\TempFile.cs" />
     <Compile Include="Models\TempFiles.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="Utils\DebugTool.cs" />
     <Compile Include="Utils\Utils.cs" />
     <Compile Include="ViewModels\MainWindowViewModel.cs" />
@@ -151,4 +155,11 @@
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="AfterResolveReferences">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll'">
+        <LogicalName>%(ReferenceCopyLocalPaths.DestinationSubDirectory)%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
 </Project>
