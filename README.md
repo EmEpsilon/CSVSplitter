@@ -1,68 +1,68 @@
 # CSVSplitter
 
-## �T�v
+## 概要
 
-* CSV�t�@�C�����\�[�g�A�������A����̃t�H���_�ɏo�͂��܂��B
-* �����Ώۂ�CSV�t�@�C���́A1�܂��͕�����I���ł��܂��B
-* �����CSV�t�@�C���ł������̃��������g�p�����A�������\�ł��B
+* CSVファイルをソート、分割し、所定のフォルダに出力します。
+* 処理対象のCSVファイルは、1つまたは複数を選択できます。
+* 巨大なCSVファイルでも多くのメモリを使用せず、処理が可能です。
 
-## �V�X�e���v��
+## システム要件
 
-* .NET Framework 4.6.2�ȏオ�����Ă���AWindows��œ��삵�܂��B
+* .NET Framework 4.6.2以上が入っている、Windows上で動作します。
 
-## ������@
+## 操作方法
 
-1. �u1.�Ώۃt�@�C���������Ƀh���b�v���Ă��������B�v�ɁACSV�t�@�C�����h���b�v���Ă��������B
-   * ��������ꍇ�́A�����ăh���b�v���邱�Ƃ��\�ł��B
-2. CSV�t�@�C���̃h���b�v������������A�u2.�����Ώۂ�CSV�t�@�C���`�v�̉E���ɂ���A�u���́v�{�^���������Ă��������B
-3. �u3.�Ώۃt�@�C���̕��͌��ʁv�̓��e���m�F���܂��B
-   * �o�̓��b�Z�[�W��
+1. 「1.対象ファイルをここにドロップしてください。」に、CSVファイルをドロップしてください。
+   * 複数ある場合は、分けてドロップすることも可能です。
+2. CSVファイルのドロップが完了したら、「2.処理対象のCSVファイル～」の右下にある、「分析」ボタンを押してください。
+3. 「3.対象ファイルの分析結果」の内容を確認します。
+   * 出力メッセージ例
 
-| ���b�Z�[�W                                          | ����                                                       |
+| メッセージ                                          | 説明                                                       |
 | ---------------------------------------------- | -------------------------------------------------------- |
-| CSV�ł͂Ȃ��t�@�C��������܂��B                              | �Ώۃt�@�C���̒��ɁACSV�ł͂Ȃ��t�@�C��������܂��B                              |
-| �����E�o�͂ł��Ȃ����߁A���Z�b�g�{�^���������A�ΏۊO�̃t�@�C���������Ď�荞�݂Ȃ����Ă��������B  | ������i�߂邱�Ƃ��ł��Ȃ����߁A�E��́u���Z�b�g�v�{�^���������ACSV�t�@�C���̂݃h���b�v���Ȃ������Ă��������B |
-| ���ׂẴt�@�C���̃w�b�_�[�ƕ����R�[�h����v���Ă��܂��B�����t�@�C���̓������ł��܂��B    | �Ώۃt�@�C���̃w�b�_�[�̓��e�ƁA�����R�[�h����v���Ă��邽�߁A�����t�@�C���𓝍����ď������邱�Ƃ��ł��܂��B   |
-| ���ׂẴt�@�C���̃w�b�_�[�ƕ����R�[�h����v���Ă��܂���B�t�@�C�����Ƃ̕��������{�ł��܂��B | �Ώۃt�@�C���̃w�b�_�[�̓��e�ƁA�����R�[�h����v���Ă��Ȃ����߁A�����t�@�C���𓝍����ď������邱�Ƃ��ł��܂���B |
-| �����E�o�͂ł��܂��B                                        | 4�ȍ~�̑��삪�ł��܂��B                                             |
+| CSVではないファイルがあります。                              | 対象ファイルの中に、CSVではないファイルがあります。                              |
+| 分割・出力できないため、リセットボタンを押し、対象外のファイルを除いて取り込みなおしてください。  | 処理を進めることができないため、右上の「リセット」ボタンを押し、CSVファイルのみドロップしない押してください。 |
+| すべてのファイルのヘッダーと文字コードが一致しています。複数ファイルの統合ができます。    | 対象ファイルのヘッダーの内容と、文字コードが一致しているため、複数ファイルを統合して処理することができます。   |
+| すべてのファイルのヘッダーと文字コードが一致していません。ファイルごとの分割を実施できます。 | 対象ファイルのヘッダーの内容と、文字コードが一致していないため、複数ファイルを統合して処理することができません。 |
+| 分割・出力できます。                                        | 4以降の操作ができます。                                             |
 
-4. �u�ϊ������v�̎w����s���܂��B
-  * �\�[�g����
-    * �o�͂���t�@�C���̃\�[�g�������w�肵�܂��B
-    * �R���{�{�b�N�X����\�[�g���鍀�ڂ��w�肵�܂��B�����I�񂾏ꍇ�́A�����珇�ԂɓK�p����܂��B
-      * �~���ɕ��ёւ���ꍇ�́A�u�~���v�Ƀ`�F�b�N�����܂��B
-      * �Ώۂ̍��ڂ����l�̏ꍇ�́A�u���l�v�Ƀ`�F�b�N�����܂��B
-  * ��������
-    * �o�͂���t�@�C���̕����������w�肵�܂��B
-    * �R���{�{�b�N�X���番�������ƂȂ鍀�ڂ��w�肵�܂��B�w�肵�����ڂ������Ƀt�@�C���𕪊����܂��B�����I�񂾏ꍇ�́A���ׂēK�p����܂��B
-      * ��Ƃ��āA����CSV�t�@�C����A���ڂ�����AA���ڂɁu1�v�A�u2�v�A�u3�v�̂ǂꂩ�̓��e���Z�b�g����Ă���ꍇ�A���ꂼ��A���ڂ́u1�v�A�u2�v�A�u3�v���܂܂��t�@�C����3�쐬����܂��B
-  * ������CSV�t�@�C���𓝍�����
-    * �����t�@�C����1��CSV�ɓ���������ŏ������܂��B
-      * �Ώۃt�@�C���S�ē������ڂƕ����R�[�h��CSV�t�@�C���̏ꍇ�A�I���\�ł��B
-  * CSV�o�͍ő�s��
-    * �o�͂���CSV�t�@�C���̍ő�s�����w�肵�܂��B(EXCEL�̍ő�s���Ή�)
-      * �ő�s���𒴂���悤�ȏꍇ�́A�t�@�C���𕪊����܂��B
-5. 4�́u�ϊ������v���w���
-  * �o�̓t�H���_���w�肵�܂��B
-  * �Ō�Ɂu�ϊ��J�n�v�{�^���������܂��B
-  * �u�ϊ����������܂����B�v�̃��b�Z�[�W���\�����ꂽ��A�t�@�C���o�͂������ł��B
-    * �u�o�͐�t�H���_���J���v�������ƁA�o�͐�̃t�H���_���J�����Ƃ��ł��܂��B
+4. 「変換条件」の指定を行います。
+  * ソート条件
+    * 出力するファイルのソート条件を指定します。
+    * コンボボックスからソートする項目を指定します。複数選んだ場合は、頭から順番に適用されます。
+      * 降順に並び替える場合は、「降順」にチェックを入れます。
+      * 対象の項目が数値の場合は、「数値」にチェックを入れます。
+  * 分割条件
+    * 出力するファイルの分割条件を指定します。
+    * コンボボックスから分割条件となる項目を指定します。指定した項目を条件にファイルを分割します。複数選んだ場合は、すべて適用されます。
+      * 例として、あるCSVファイルにA項目があり、A項目に「1」、「2」、「3」のどれかの内容がセットされている場合、それぞれA項目の「1」、「2」、「3」が含まれるファイルが3つ作成されます。
+  * 複数のCSVファイルを統合する
+    * 複数ファイルを1つのCSVに統合した上で処理します。
+      * 対象ファイル全て同じ項目と文字コードのCSVファイルの場合、選択可能です。
+  * CSV出力最大行数
+    * 出力するCSVファイルの最大行数を指定します。(EXCELの最大行数対応)
+      * 最大行数を超えるような場合は、ファイルを分割します。
+5. 4の「変換条件」を指定後
+  * 出力フォルダを指定します。
+  * 最後に「変換開始」ボタンを押します。
+  * 「変換が完了しました。」のメッセージが表示されたら、ファイル出力が完了です。
+    * 「出力先フォルダを開く」を押すと、出力先のフォルダを開くことができます。
 
-## �g�p���Ă��郉�C�u����
+## 使用しているライブラリ
 
 * [CsvHelper](https://github.com/JoshClose/CsvHelper)
-  - CSV�t�@�C���̓ǂݍ��݂Ɏg�p
+  - CSVファイルの読み込みに使用
 * [ReadJEnc](https://github.com/hnx8/ReadJEnc)
-  - �����R�[�h����
+  - 文字コード判定
 * [Microsoft-WindowsAPICodePack-Shell](https://www.nuget.org/packages/Microsoft-WindowsAPICodePack-Shell/)
-  - �o�͐�t�H���_�w��̋@�\�Ŏg�p
+  - 出力先フォルダ指定の機能で使用
 
-# ���̑��Q�l�ɂ��Ă���T�C�g
+# その他参考にしているサイト
 
-* secretbase.log [WPF�A�v���P�[�V������EXE�ЂƂɂ܂Ƃ߂�](https://cointoss.hatenablog.com/entry/2017/02/21/121209)
-  - dll��exe�ɂ܂Ƃ߂���@�Ƃ��ĎQ�l�ɂ����Ă��������܂����B
-  - ��{�̃T�C�g http://www.digitallycreated.net/Blog/61/combining-multiple-assemblies-into-a-single-exe-for-a-wpf-application
+* secretbase.log [WPFアプリケーションをEXEひとつにまとめる](https://cointoss.hatenablog.com/entry/2017/02/21/121209)
+  - dllをexeにまとめる方法として参考にさせていただきました。
+  - 大本のサイト http://www.digitallycreated.net/Blog/61/combining-multiple-assemblies-into-a-single-exe-for-a-wpf-application
 
-## ���
+## 作者
 
 * [X](https://twitter.com/Em_epsilon)

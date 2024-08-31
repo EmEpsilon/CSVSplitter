@@ -173,7 +173,10 @@ namespace CSVSplitter.Commands
                     {
                         while (await csv.ReadAsync())
                         {
-                            var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
+                            if (count == 0)
+                            {
+                                var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
+                            }
                             count++;
                         }
                     }
