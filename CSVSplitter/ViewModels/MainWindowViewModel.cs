@@ -285,6 +285,7 @@ namespace CSVSplitter.ViewModels
             {
                 _integrationMode = value;
                 RaisePropertyChanged();
+                RaisePropertyChanged("IsAbleToInputIntegrateCheck");
             }
         }
 

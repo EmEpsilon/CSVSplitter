@@ -11,29 +11,34 @@
         <vm:MainWindowViewModel/>
     </Window.DataContext>
     <Grid>
-        <GroupBox x:Name="GboxInputFile" Header="1.対象ファイルをここにドロップしてください。" Height="74" VerticalAlignment="Top" Margin="10,38,10,0" Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" BorderBrush="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Grid.ColumnSpan="3" AllowDrop="True" Drop="GboxInputFile_Drop" DragOver="GboxInputFile_DragOver"/>
-        <GroupBox x:Name="GBoxInputFile2" Header="2.処理対象のCSVファイル(ファイルを取り込んだら、下の分析ボタンを押すこと)" Margin="10,117,10,398">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="599*"/>
+            <ColumnDefinition Width="201*"/>
+        </Grid.ColumnDefinitions>
+        <GroupBox x:Name="GboxInputFile" Header="1.対象ファイルをここにドロップしてください。" Height="74" VerticalAlignment="Top" Margin="10,38,10,0" Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" BorderBrush="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Grid.ColumnSpan="2" AllowDrop="True" Drop="GboxInputFile_Drop" DragOver="GboxInputFile_DragOver"/>
+        <GroupBox x:Name="GBoxInputFile2" Header="2.処理対象のCSVファイル(ファイルを取り込んだら、下の分析ボタンを押すこと)" Margin="10,117,10,398" Grid.ColumnSpan="2">
             <Grid>
                 <DataGrid x:Name="DGInputFiles" ItemsSource="{Binding InputFiles}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,0,28" >
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="ファイルパス" Width="400" Binding="{Binding FilePath}"/>
+                        <DataGridTextColumn Header="ファイルパス" Width="300" Binding="{Binding FilePath}"/>
                         <DataGridCheckBoxColumn Header="分析済み" Width="60" Binding="{Binding IsAnalyzed, Mode=OneWay}"/>
                         <DataGridCheckBoxColumn Header="CSV" Width="40" Binding="{Binding IsCsvFile, Mode=OneWay}"/>
                         <DataGridTextColumn Header="エンコーディング" Width="90" Binding="{Binding Encoding.EncodingName, Mode=OneWay}"/>
                         <DataGridTextColumn Header="区切り文字" Width="70" Binding="{Binding DelimiterName, Mode=OneWay}"/>
                         <DataGridTextColumn Header="Bom" Width="70" Binding="{Binding HasBomName, Mode=OneWay}" />
+                        <DataGridTextColumn Header="ダブルクォーテーション" Binding="{Binding HasDoubleQuoteName, Mode=OneWay}" />
                     </DataGrid.Columns>
                 </DataGrid>
                 <Button x:Name="Btn_Analyze" Content="分析" HorizontalAlignment="Right" Width="47"
                     Command="{Binding AnalyzeInputFilesCommand}" Height="23" VerticalAlignment="Bottom" />
             </Grid>
         </GroupBox>
-        <Button x:Name="Btn_Reset" Content="リセット" Margin="0,10,10,0" Height="23" VerticalAlignment="Top" HorizontalAlignment="Right" Width="47" Grid.Column="2"
+        <Button x:Name="Btn_Reset" Content="リセット" Margin="0,10,10,0" Height="23" VerticalAlignment="Top" HorizontalAlignment="Right" Width="47" Grid.Column="1"
                 Command="{Binding ResetCommand}" />
-        <GroupBox Header="3.対象ファイルの分析結果" Margin="10,0,10,321" Height="72" VerticalAlignment="Bottom">
+        <GroupBox Header="3.対象ファイルの分析結果" Margin="10,0,10,321" Height="72" VerticalAlignment="Bottom" Grid.ColumnSpan="2">
             <TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" Text="{Binding AnalysisReportOfInputFiles}" Width="770" />
         </GroupBox>
-        <GroupBox x:Name="GB_Option" Header="4.変換条件" Margin="10,0,10,116" Height="200" VerticalAlignment="Bottom">
+        <GroupBox x:Name="GB_Option" Header="4.変換条件" Margin="10,0,10,116" Height="200" VerticalAlignment="Bottom" Grid.ColumnSpan="2">
             <Grid>
                 <GroupBox Header="ソート条件" HorizontalAlignment="Left" Width="337">
                     <Grid>
@@ -64,8 +69,8 @@
                 <TextBox HorizontalAlignment="Left" Margin="592,0,0,0" TextWrapping="Wrap" Text="{Binding MaxCsvRecordsString}" VerticalAlignment="Center" Width="120" IsEnabled="{Binding IsAbleToInput}"/>
             </Grid>
         </GroupBox>
-        <ComboBox HorizontalAlignment="Left" Height="0" Margin="3,635,0,0" VerticalAlignment="Top" Width="120" Grid.Column="1"/>
-        <GroupBox Header="5.変換開始" Margin="10,0,10,10" Height="101" VerticalAlignment="Bottom">
+        <ComboBox HorizontalAlignment="Left" Height="0" Margin="3,635,0,0" VerticalAlignment="Top" Width="120"/>
+        <GroupBox Header="5.変換開始" Margin="10,0,10,10" Height="101" VerticalAlignment="Bottom" Grid.ColumnSpan="2">
             <Grid>
                 <Button x:Name="Btn_Split" Content="変換開始" Margin="0,0,10,10" HorizontalAlignment="Right" Width="63" Height="23" VerticalAlignment="Bottom"
                     Command="{Binding ConvertCommand}" />

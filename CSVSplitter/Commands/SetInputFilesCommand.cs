@@ -32,16 +32,25 @@ namespace CSVSplitter.Commands
         {
             Utils.DebugTool.WriteLine("Execute SetInputFiles");
 
-            if(parameter is string[])
+            try
             {
-                var files = parameter as string[];
-                foreach (var file in files)
+                if (parameter is string[])
                 {
-                    if (!_viewModel.InputFiles.Contains(file))
+                    var files = parameter as string[];
+                    foreach (var file in files)
                     {
-                        _viewModel.AddInputFile(file);
+                        if (!_viewModel.InputFiles.Contains(file))
+                        {
+                            _viewModel.AddInputFile(file);
+                        }
                     }
                 }
+            }
+            catch (Exception e)
+            {
+                System.Windows.MessageBox.Show("ファイルの設定で、エラーが発生しました: " + e.Message);
+                Utils.DebugTool.WriteLine("Error setting input files: " + e.ToString(), true);
+                throw e;
             }
         }
     }

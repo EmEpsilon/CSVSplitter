@@ -33,9 +33,18 @@ namespace CSVSplitter.Commands
 
         public void Execute(object parameter)
         {
-            if (System.IO.Directory.Exists(this._viewModel.OutputFolder))
+            try
             {
-                System.Diagnostics.Process.Start(this._viewModel.OutputFolder);
+                if (System.IO.Directory.Exists(this._viewModel.OutputFolder))
+                {
+                    System.Diagnostics.Process.Start(this._viewModel.OutputFolder);
+                }
+            }
+            catch (Exception e)
+            {
+                System.Windows.MessageBox.Show("フォルダを開く際にエラーが発生しました: " + e.Message);
+                Utils.DebugTool.WriteLine("Error opening folder: " + e.ToString(), true);
+                throw e;
             }
         }
     }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 
 namespace CSVSplitter.Commands
@@ -32,22 +33,30 @@ namespace CSVSplitter.Commands
         public void Execute(object parameter)
         {
             Utils.DebugTool.WriteLine("Execute AnalyzeInputFiles");
-            this._viewModel.AnalyzeInputFiles();
-            this._viewModel.AnalysisReportOfInputFiles = this._viewModel.InputFiles.GetAnalysisReport();
-            var commonHeaders = this._viewModel.InputFiles.GetCommonHeaders();
-            this._viewModel.SortItems.Clear();
-            this._viewModel.SortItems.Add("");
-            foreach (var header in commonHeaders)
+            try
             {
-                this._viewModel.SortItems.Add(header);
+                this._viewModel.AnalyzeInputFiles();
+                this._viewModel.AnalysisReportOfInputFiles = this._viewModel.InputFiles.GetAnalysisReport();
+                var commonHeaders = this._viewModel.InputFiles.GetCommonHeaders();
+                this._viewModel.SortItems.Clear();
+                this._viewModel.SortItems.Add("");
+                foreach (var header in commonHeaders)
+                {
+                    this._viewModel.SortItems.Add(header);
+                }
+                this._viewModel.SplitItems.Clear();
+                this._viewModel.SplitItems.Add("");
+                foreach (var header in commonHeaders)
+                {
+                    this._viewModel.SplitItems.Add(header);
+                }
+                this._viewModel.IntegrationMode = false;
             }
-            this._viewModel.SplitItems.Clear();
-            this._viewModel.SplitItems.Add("");
-            foreach (var header in commonHeaders)
+            catch(Exception e)
             {
-                this._viewModel.SplitItems.Add(header);
+                MessageBox.Show("ファイルの分析で、エラーが発生しました。: " + e.ToString());
+                throw e;
             }
-            this._viewModel.IntegrationMode = false;
         }
     }
 }

@@ -9,38 +9,58 @@ namespace CSVSplitter.Models
 {
     public class SortComparer : IComparer<SortCsvRow>
     {
-        private List<SortOption> Options { get; set; }
+        public List<SortOption> Options { get; set; }
         public SortComparer(List<SortOption> prmOptions) 
         {
             this.Options = prmOptions;
         }
         public int Compare(SortCsvRow x, SortCsvRow y)
         {
+            int i = 0;
             foreach(SortOption option in this.Options)
             {
                 int result = 0;
-                if (option.IsNumeric)
+                if (x.isSettedKey && y.isSettedKey)
                 {
-                    double tmp1;
-                    double tmp2;
-                    if (!double.TryParse(x.Data[option.ColName].ToString(), out tmp1))
+                    if (option.IsNumeric)
                     {
-                        tmp1 = 0;
+                        result = x.SortKeyArray[i].num.CompareTo(y.SortKeyArray[i].num);
                     }
-                    if (!double.TryParse(y.Data[option.ColName].ToString(), out tmp2))
+                    else
                     {
-                        tmp2 = 0;
+                        result = String.Compare(x.SortKeyArray[i].obj.ToString(), y.SortKeyArray[i].obj.ToString(), StringComparison.Ordinal);
                     }
-                    result = tmp1.CompareTo(tmp2);
+                    if (result != 0)
+                    {
+                        return option.Descending ? -result : result;
+                    }
                 }
                 else
                 {
-                    result = String.Compare(x.Data[option.ColName].ToString(), y.Data[option.ColName].ToString());
+                    if (option.IsNumeric)
+                    {
+                        double tmp1;
+                        double tmp2;
+                        if (!double.TryParse(x.Data[option.ColName].ToString(), out tmp1))
+                        {
+                            tmp1 = 0;
+                        }
+                        if (!double.TryParse(y.Data[option.ColName].ToString(), out tmp2))
+                        {
+                            tmp2 = 0;
+                        }
+                        result = tmp1.CompareTo(tmp2);
+                    }
+                    else
+                    {
+                        result = String.Compare(x.Data[option.ColName].ToString(), y.Data[option.ColName].ToString(), StringComparison.Ordinal);
+                    }
+                    if (result != 0)
+                    {
+                        return option.Descending ? -result : result;
+                    }
                 }
-                if (result != 0)
-                {
-                    return option.Descending ? -result : result;
-                }
+                i++;
             }
             return 0;
         }

@@ -56,6 +56,8 @@ namespace CSVSplitter.Models
 
         private bool _isCsvFile = false;
 
+        private bool _hasDoubleQuote = false;
+
         public char Delimiter
         {
             get
@@ -77,6 +79,18 @@ namespace CSVSplitter.Models
                 if (this.Delimiter == '\t')
                 {
                     return "タブ";
+                }
+                else if (this.Delimiter == ',')
+                {
+                    return "カンマ( , )";
+                }
+                else if (this.Delimiter == ';')
+                {
+                    return "セミコロン( ; )";
+                }
+                else if (this.Delimiter == '|')
+                {
+                    return "パイプ( | )";
                 }
                 else
                 {
@@ -199,6 +213,28 @@ namespace CSVSplitter.Models
             }
         }
 
+        public bool HasDoubleQuote
+        {
+            get
+            {
+                return _hasDoubleQuote;
+            }
+            private set
+            {
+                _hasDoubleQuote = value;
+                NotifyPropertyChanged();
+                NotifyPropertyChanged("HasDoubleQuoteName");
+            }
+        }
+
+        public string HasDoubleQuoteName
+        {
+            get
+            {
+                return this.HasDoubleQuote ? "あり" : "なし";
+            }
+        }
+
         public void Analyze()
         {
             if(!File.Exists(this.FilePath))
@@ -258,46 +294,82 @@ namespace CSVSplitter.Models
                 const char CR = '\r';
                 const char LF = '\n';
                 char nowChar = (char)0;
+                char firstChar = (char)0;
+                bool readedFirstChar = false;
                 bool dqFlag = false;
                 this.NewLine = null;
                 while (!reader.EndOfStream)
                 {
                     char nextChar = (char)reader.Read();
-                    if (nextChar == '"')
+                    if (!readedFirstChar)
                     {
-                        dqFlag = !dqFlag;
+                        firstChar = nextChar;
+                        readedFirstChar = true;
                     }
-                    if (nowChar == CR && nextChar == LF)
+
+                    if (firstChar == '"')
                     {
-                        this.NewLine = CR.ToString() + LF.ToString();
-                        if (!dqFlag)
+                        if (nextChar == '"')
+                        {
+                            dqFlag = !dqFlag;
+                        }
+                        if (nowChar == CR && nextChar == LF)
+                        {
+                            this.NewLine = CR.ToString() + LF.ToString();
+                            if (!dqFlag)
+                            {
+                                break;
+                            }
+                        }
+                        else if (nowChar == CR)
+                        {
+                            this.NewLine = CR.ToString();
+                            if (!dqFlag)
+                            {
+                                break;
+                            }
+                        }
+                        else if (nowChar == LF)
+                        {
+                            this.NewLine = LF.ToString();
+                            if (!dqFlag)
+                            {
+                                break;
+                            }
+                        }
+                        nowChar = nextChar;
+                        readSize++;
+                        if (readSize > maxReadSize)
                         {
                             break;
                         }
                     }
-                    else if (nowChar == CR)
+                    else
                     {
-                        this.NewLine = CR.ToString();
-                        if (!dqFlag)
+                        if (nowChar == CR && nextChar == LF)
+                        {
+                            this.NewLine = CR.ToString() + LF.ToString();
+                            break;
+                        }
+                        else if (nowChar == CR)
+                        {
+                            this.NewLine = CR.ToString();
+                            break;
+                        }
+                        else if (nowChar == LF)
+                        {
+                            this.NewLine = LF.ToString();
+                            break;
+                        }
+                        nowChar = nextChar;
+                        readSize++;
+                        if (readSize > maxReadSize)
                         {
                             break;
                         }
-                    }
-                    else if (nowChar == LF)
-                    {
-                        this.NewLine = LF.ToString();
-                        if (!dqFlag)
-                        {
-                            break;
-                        }
-                    }
-                    nowChar = nextChar;
-                    readSize++;
-                    if (readSize > maxReadSize)
-                    {
-                        break;
                     }
                 }
+                this.HasDoubleQuote = firstChar == '"';
             }
 
             this.IsCsvFile = this.IsTextFile && this.Delimiter != '\0' && this.NewLine != null && this.Encoding != null;
@@ -482,7 +554,8 @@ namespace CSVSplitter.Models
                 HasHeaderRecord = true,
                 IgnoreBlankLines = true,
                 NewLine = this.NewLine,
-                Encoding = this.Encoding
+                Encoding = this.Encoding,
+                ShouldQuote = (context) => HasDoubleQuote,
             };
 
             return config;

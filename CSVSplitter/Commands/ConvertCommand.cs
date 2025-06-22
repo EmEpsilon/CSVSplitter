@@ -13,6 +13,7 @@ using System.Windows.Navigation;
 using CsvHelper;
 using CsvHelper.Configuration;
 using CSVSplitter.Models;
+using CSVSplitter.ViewModels;
 
 namespace CSVSplitter.Commands
 {
@@ -42,123 +43,136 @@ namespace CSVSplitter.Commands
 
         private List<string> outputFiles; // 非同期メソッド間で共有するための変数
         private Dictionary<string, long> DicCountCsvFile;
+        private UpdateProgressStatus updateProgressStatus { get; set; }
+        private bool _updateProgressModeAtMerge = true;
 
         public async void Execute(object parameter)
         {
             Utils.DebugTool.WriteLine("Execute Convert");
-            this._viewModel.ChangeProcessingStatus(true);
-            this._viewModel.ProgressValue = 0;
-            this._viewModel.ResetStopwatch();
-            this._viewModel.StartStopwatch();
-
-            var listSortOptions = new List<Models.SortOption>();
-            if(!string.IsNullOrEmpty(this._viewModel.SortItem1SelectedValue))
+            try
             {
-                listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem1SelectedValue, this._viewModel.SortItem1IsDescending,this._viewModel.SortItem1IsNumeric));
-            }
-            if (!string.IsNullOrEmpty(this._viewModel.SortItem2SelectedValue))
-            {
-                listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem2SelectedValue, this._viewModel.SortItem2IsDescending, this._viewModel.SortItem2IsNumeric));
-            }
-            if (!string.IsNullOrEmpty(this._viewModel.SortItem3SelectedValue))
-            {
-                listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem3SelectedValue, this._viewModel.SortItem3IsDescending, this._viewModel.SortItem3IsNumeric));
-            }
-            if (!string.IsNullOrEmpty(this._viewModel.SortItem4SelectedValue))
-            {
-                listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem4SelectedValue, this._viewModel.SortItem4IsDescending, this._viewModel.SortItem4IsNumeric));
-            }
+                updateProgressStatus = new UpdateProgressStatus(this._viewModel);
+                this._viewModel.ChangeProcessingStatus(true);
+                this._viewModel.ProgressValue = 0;
+                this._viewModel.ResetStopwatch();
+                this._viewModel.StartStopwatch();
 
-            var comp = new Models.SortComparer(listSortOptions);
+                var listSortOptions = new List<Models.SortOption>();
+                if (!string.IsNullOrEmpty(this._viewModel.SortItem1SelectedValue))
+                {
+                    listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem1SelectedValue, this._viewModel.SortItem1IsDescending, this._viewModel.SortItem1IsNumeric));
+                }
+                if (!string.IsNullOrEmpty(this._viewModel.SortItem2SelectedValue))
+                {
+                    listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem2SelectedValue, this._viewModel.SortItem2IsDescending, this._viewModel.SortItem2IsNumeric));
+                }
+                if (!string.IsNullOrEmpty(this._viewModel.SortItem3SelectedValue))
+                {
+                    listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem3SelectedValue, this._viewModel.SortItem3IsDescending, this._viewModel.SortItem3IsNumeric));
+                }
+                if (!string.IsNullOrEmpty(this._viewModel.SortItem4SelectedValue))
+                {
+                    listSortOptions.Add(new Models.SortOption(this._viewModel.SortItem4SelectedValue, this._viewModel.SortItem4IsDescending, this._viewModel.SortItem4IsNumeric));
+                }
 
-            var splitInfo = new CCSplitInfo();
-            splitInfo.AddHeader(this._viewModel.SplitItem1SelectedValue);
-            splitInfo.AddHeader(this._viewModel.SplitItem2SelectedValue);
-            splitInfo.AddHeader(this._viewModel.SplitItem3SelectedValue);
-            splitInfo.AddHeader(this._viewModel.SplitItem4SelectedValue);
+                var comp = new Models.SortComparer(listSortOptions);
 
-            if(!System.IO.Directory.Exists(this._viewModel.OutputFolder))
-            {
-                System.IO.Directory.CreateDirectory(this._viewModel.OutputFolder);
-            }
+                var splitInfo = new CCSplitInfo();
+                splitInfo.AddHeader(this._viewModel.SplitItem1SelectedValue);
+                splitInfo.AddHeader(this._viewModel.SplitItem2SelectedValue);
+                splitInfo.AddHeader(this._viewModel.SplitItem3SelectedValue);
+                splitInfo.AddHeader(this._viewModel.SplitItem4SelectedValue);
 
-            this.outputFiles = new List<string>();
-            this.DicCountCsvFile = new Dictionary<string, long>();
+                if (!System.IO.Directory.Exists(this._viewModel.OutputFolder))
+                {
+                    System.IO.Directory.CreateDirectory(this._viewModel.OutputFolder);
+                }
 
-            long totalRecords = 0;
-            foreach (var file in this._viewModel.InputFiles)
-            {
-                totalRecords += await CountCsvFileAsync(file.FilePath, file.GetCsvConfig());
-            }
-            long currentRecords = 0;
+                this.outputFiles = new List<string>();
+                this.DicCountCsvFile = new Dictionary<string, long>();
 
-            var ccTempFiles = new List<CCTempFile>();
-            if (_viewModel.IntegrationMode)
-            {
-                Utils.DebugTool.WriteLine("IntegrationMode");
-                var listMiddleTempFIles = new List<CCTempFile>();
-                var ccTempFile = new CCTempFile(this._viewModel.TempFiles.Add());
-                ccTempFile.CsvConfig = this._viewModel.InputFiles[0].GetCsvConfig();
-                ccTempFile.RawHeader = this._viewModel.InputFiles[0].RawHeader;
-                ccTempFile.originalFilePath = this._viewModel.InputFiles[0].FilePath;
-                ccTempFiles.Add(ccTempFile);
-                listMiddleTempFIles.Add(ccTempFile);
-
-                await MergeCsvFileAsync(this._viewModel.InputFiles.Select(f => f.FilePath).ToList(), ccTempFile.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader);
-                var ccTempFile2 = new CCTempFile(this._viewModel.TempFiles.Add());
-                ccTempFile2.CsvConfig = ccTempFile.CsvConfig;
-                ccTempFile2.RawHeader = ccTempFile.RawHeader;
-                ccTempFile2.originalFilePath = ccTempFile.originalFilePath;
-                ccTempFiles.Add(ccTempFile2);
-                listMiddleTempFIles.Add(ccTempFile2);
-
-                var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(this._viewModel.InputFiles[0].Header.Length);
-                currentRecords += await SortCsvFileAsync(ccTempFile.FilePath, ccTempFile2.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
-                this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
-
-                var outputFilePath = Path.Combine(this._viewModel.OutputFolder, Path.GetFileName(ccTempFile2.originalFilePath));
-                currentRecords += await OutputCsvFileAsync(ccTempFile2.FilePath, outputFilePath, ccTempFile2.CsvConfig, splitInfo, ccTempFile2.RawHeader);
-                this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
-            }
-            else
-            {
-                Utils.DebugTool.WriteLine("NormalMode");
-                var listMiddleTempFIles = new List<CCTempFile>();
+                long totalRecords = 0;
                 foreach (var file in this._viewModel.InputFiles)
                 {
+                    totalRecords += await CountCsvFileAsync(file.FilePath, file.GetCsvConfig());
+                }
+                long currentRecords = 0;
+                updateProgressStatus.SetTotalAmount(totalRecords * 2);
+
+                var ccTempFiles = new List<CCTempFile>();
+                if (_viewModel.IntegrationMode)
+                {
+                    Utils.DebugTool.WriteLine("IntegrationMode");
+                    var listMiddleTempFIles = new List<CCTempFile>();
                     var ccTempFile = new CCTempFile(this._viewModel.TempFiles.Add());
-                    ccTempFile.CsvConfig = file.GetCsvConfig();
-                    ccTempFile.RawHeader = file.RawHeader;
-                    ccTempFile.originalFilePath = file.FilePath;
+                    ccTempFile.CsvConfig = this._viewModel.InputFiles[0].GetCsvConfig();
+                    ccTempFile.RawHeader = this._viewModel.InputFiles[0].RawHeader;
+                    ccTempFile.originalFilePath = this._viewModel.InputFiles[0].FilePath;
                     ccTempFiles.Add(ccTempFile);
                     listMiddleTempFIles.Add(ccTempFile);
 
-                    var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(file.Header.Length);
-                    currentRecords += await SortCsvFileAsync(file.FilePath, ccTempFile.FilePath, ccTempFile.CsvConfig,comp, ccTempFile.RawHeader, maxSortFileRecords);
-                    this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
-                }
+                    _updateProgressModeAtMerge = false; // 統合モードでは、マージ時の進捗更新を無効にする
+                    await MergeCsvFileAsync(this._viewModel.InputFiles.Select(f => f.FilePath).ToList(), ccTempFile.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader);
+                    _updateProgressModeAtMerge = true; // マージ後は進捗更新を有効に戻す
+                    var ccTempFile2 = new CCTempFile(this._viewModel.TempFiles.Add());
+                    ccTempFile2.CsvConfig = ccTempFile.CsvConfig;
+                    ccTempFile2.RawHeader = ccTempFile.RawHeader;
+                    ccTempFile2.originalFilePath = ccTempFile.originalFilePath;
+                    ccTempFiles.Add(ccTempFile2);
+                    listMiddleTempFIles.Add(ccTempFile2);
 
-                foreach (var ccTempFile in listMiddleTempFIles)
+                    var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(this._viewModel.InputFiles[0].Header.Length);
+                    currentRecords += await SortCsvFileAsync(ccTempFile.FilePath, ccTempFile2.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                    //this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
+
+                    var outputFilePath = Path.Combine(this._viewModel.OutputFolder, Path.GetFileName(ccTempFile2.originalFilePath));
+                    currentRecords += await OutputCsvFileAsync(ccTempFile2.FilePath, outputFilePath, ccTempFile2.CsvConfig, splitInfo, ccTempFile2.RawHeader);
+                    //this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
+                }
+                else
                 {
-                    var outputFilePath = Path.Combine(this._viewModel.OutputFolder, Path.GetFileName(ccTempFile.originalFilePath));
-                    currentRecords += await OutputCsvFileAsync(ccTempFile.FilePath, outputFilePath, ccTempFile.CsvConfig, splitInfo, ccTempFile.RawHeader);
-                    this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
+                    Utils.DebugTool.WriteLine("NormalMode");
+                    var listMiddleTempFIles = new List<CCTempFile>();
+                    foreach (var file in this._viewModel.InputFiles)
+                    {
+                        var ccTempFile = new CCTempFile(this._viewModel.TempFiles.Add());
+                        ccTempFile.CsvConfig = file.GetCsvConfig();
+                        ccTempFile.RawHeader = file.RawHeader;
+                        ccTempFile.originalFilePath = file.FilePath;
+                        ccTempFiles.Add(ccTempFile);
+                        listMiddleTempFIles.Add(ccTempFile);
+
+                        var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(file.Header.Length);
+                        currentRecords += await SortCsvFileAsync(file.FilePath, ccTempFile.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                        this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
+                    }
+
+                    foreach (var ccTempFile in listMiddleTempFIles)
+                    {
+                        var outputFilePath = Path.Combine(this._viewModel.OutputFolder, Path.GetFileName(ccTempFile.originalFilePath));
+                        currentRecords += await OutputCsvFileAsync(ccTempFile.FilePath, outputFilePath, ccTempFile.CsvConfig, splitInfo, ccTempFile.RawHeader);
+                        this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
+                    }
+
                 }
 
-            }
-
-            if(totalRecords * 2 == currentRecords)
-            {
+                // 処理が完了しているので、進捗を100%に設定
                 this._viewModel.ProgressValue = 100;
-            }
 
-            foreach (var ccTempFile in ccTempFiles)
-            {
-                this._viewModel.TempFiles.Delete(ccTempFile.Guid);
+                foreach (var ccTempFile in ccTempFiles)
+                {
+                    this._viewModel.TempFiles.Delete(ccTempFile.Guid);
+                }
+                this._viewModel.StopStopwatch();
+                this._viewModel.ChangeProcessingStatus(false);
+                MessageBox.Show("変換が完了しました。", "メッセージ", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            this._viewModel.StopStopwatch();
-            this._viewModel.ChangeProcessingStatus(false);
-            MessageBox.Show("変換が完了しました。","メッセージ",MessageBoxButton.OK,MessageBoxImage.Information);
+            catch (Exception e)
+            {
+                MessageBox.Show("変換中にエラーが発生しました。: " + e.ToString(), "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                Utils.DebugTool.WriteLine("ConvertCommand.Execute Error: " + e.ToString());
+                throw e;
+            }
         }
 
         private async Task<long> CountCsvFileAsync(string inputFile, CsvConfiguration config)
@@ -201,6 +215,7 @@ namespace CSVSplitter.Commands
             {
                 File.Copy(inputFile, outputFile, true);
                 countRecords = count;
+                this.updateProgressStatus.IncrementCount(countRecords);
             }
             else if (count <= maxSortFileRecords)
             {
@@ -218,12 +233,15 @@ namespace CSVSplitter.Commands
                             {
                                 row.RawData = row.RawData + config.NewLine;
                             }
+                            row.SetSortKey(comp);
                             list.Add(row);
                         }
                     }
                 }
 
-                list.Sort(comp);
+                list = list.AsParallel()
+                       .OrderBy(r => r, comp)
+                       .ToList();
 
                 using (var writer = new StreamWriter(outputFile, false, config.Encoding))
                 {
@@ -232,12 +250,13 @@ namespace CSVSplitter.Commands
                     {
                         await writer.WriteAsync(data.RawData);
                         countRecords++;
+                        this.updateProgressStatus.IncrementCount(1);
                     }
                 }
             }
             else
             {
-                var tmpFiles = new List<CCTempFile>();
+                var tmpFiles = new List<CCTempFile>(10000);
                 var tmpFile = new CCTempFile(this._viewModel.TempFiles.Add());
                 tmpFile.CsvConfig = config;
                 tmpFile.RawHeader = rawHeader;
@@ -249,6 +268,7 @@ namespace CSVSplitter.Commands
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
+                        StringBuilder buff = new StringBuilder(10000);
                         while (await csv.ReadAsync())
                         {
                             var row = new Models.SortCsvRow();
@@ -258,16 +278,19 @@ namespace CSVSplitter.Commands
                             {
                                 row.RawData = row.RawData + config.NewLine;
                             }
+                            row.SetSortKey(comp);
                             list.Add(row);
                             countTmp++;
                             if (countTmp >= maxSortFileRecords)
                             {
-                                list.Sort(comp);
+                                list = list.AsParallel()
+                                       .OrderBy(r => r, comp)
+                                       .ToList();
                                 using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
                                 {
                                     await writer.WriteAsync(rawHeader + config.NewLine);
                                     int wkCount = 0;
-                                    StringBuilder buff = new StringBuilder();
+                                    buff.Clear();
                                     foreach (var data in list)
                                     {
                                         wkCount++;
@@ -298,7 +321,9 @@ namespace CSVSplitter.Commands
                     }
                     if(list.Count > 0)
                     {
-                        list.Sort(comp);
+                        list = list.AsParallel()
+                               .OrderBy(r => r, comp)
+                               .ToList();
                         using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
                         {
                             await writer.WriteAsync(rawHeader + config.NewLine);
@@ -346,7 +371,7 @@ namespace CSVSplitter.Commands
         public async Task<long> MergeCsvFileAsync(List<string> inputFiles, string outputFile, CsvConfiguration config, SortComparer comp, string rawHeader)
         {
             Utils.DebugTool.WriteLine("MergeCsvFileAsync:" + string.Join(",", inputFiles) + " -> " + outputFile);
-            var inputList = new List<CCInput>();
+            var inputList = new List<CCInput>(inputFiles.Count);
             foreach (var inputFile in inputFiles)
             {
                 var ccInput = new CCInput(inputFile, config.Encoding, config);
@@ -403,6 +428,10 @@ namespace CSVSplitter.Commands
                     await writer.WriteAsync(row);
                     await ccInputMin.ReadAsync();
                     countRecords++;
+                    if (_updateProgressModeAtMerge)
+                    {
+                        this.updateProgressStatus.IncrementCount(1);
+                    }
                 }
             }
 
@@ -417,38 +446,11 @@ namespace CSVSplitter.Commands
         private async Task<long> OutputCsvFileAsync(string inputFile, string outputFile, CsvConfiguration config,CCSplitInfo ccSplitInfo, string rawHeader)
         {
             Utils.DebugTool.WriteLine("OutputCsvFileAsync:" + inputFile + " -> " + outputFile);
-            List<CCHeaderData> cCHeaderDataList = new List<CCHeaderData>();
-            using(var reader = new StreamReader(inputFile, config.Encoding))
-            {
-                using(var csv = new CsvReader(reader,config))
-                {
-                    while (await csv.ReadAsync())
-                    {
-                        var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
-                        var headerData = new List<string>();
-                        foreach(var val in ccSplitInfo.Headers)
-                        {
-                            headerData.Add(data[val].ToString());
-                        }
-                        AddCCHeaderData(ref cCHeaderDataList, headerData);
-                    }
-                }
-            }
 
             var baseFileName = Path.GetFileNameWithoutExtension(outputFile);
             var extention = Path.GetExtension(outputFile);
             var outputFolder = Directory.GetParent(outputFile).FullName;
-
             var listOutput = new List<CCOutput>();
-            foreach (var ccHeaderData in cCHeaderDataList)
-            {
-                var outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
-                outputFiles.Add(outputFilePath);
-                var ccOutput = new CCOutput(outputFilePath, config.Encoding);
-                ccOutput.HeaderData = ccHeaderData.List;
-                await ccOutput.WriteAsync(rawHeader + config.NewLine);
-                listOutput.Add(ccOutput);
-            }
 
             long countRecords = 0;
             using (var reader = new StreamReader(inputFile, config.Encoding))
@@ -463,7 +465,7 @@ namespace CSVSplitter.Commands
                         {
                             row = row + config.NewLine;
                         }
-                        var headerData = new List<string>();
+                        var headerData = new List<string>(ccSplitInfo.Headers.Count);
                         foreach (var val in ccSplitInfo.Headers)
                         {
                             headerData.Add(data[val].ToString());
@@ -492,12 +494,37 @@ namespace CSVSplitter.Commands
                                 await ccOutput.WriteAsync(row);
                                 isOutput = true;
                                 countRecords++;
+                                this.updateProgressStatus.IncrementCount(1);
                                 break;
                             }
                         }
                         if(!isOutput)
                         {
-                            throw new Exception("Output Error: ");
+                            // Create new output file
+                            var ccHeaderData = new CCHeaderData();
+                            ccHeaderData.Set(headerData);
+
+                            var outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
+                            outputFiles.Add(outputFilePath);
+                            var ccOutput = new CCOutput(outputFilePath, config.Encoding);
+                            ccOutput.HeaderData = ccHeaderData.List;
+                            await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                            listOutput.Add(ccOutput);
+
+                            // Write
+                            if (ccOutput.Counter >= this._viewModel.MaxCsvRecords)
+                            {
+                                await ccOutput.WriteFlush();
+                                outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
+                                outputFiles.Add(outputFilePath);
+                                ccOutput.Reset(outputFilePath);
+                                await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                            }
+                            await ccOutput.WriteAsync(row);
+                            isOutput = true;
+                            countRecords++;
+                            this.updateProgressStatus.IncrementCount(1);
+
                         }
 
                     }
@@ -540,26 +567,11 @@ namespace CSVSplitter.Commands
             return result;
         }
 
-        public void AddCCHeaderData(ref List<CCHeaderData> cCHeaderDataList, List<string> headers)
+        public void AddCCHeaderData(ref HashSet<CCHeaderData> ccHeaderDataHashSet, List<string> headers)
         {
-            var cCHeaderData = new CCHeaderData();
-            cCHeaderData.Add(headers);
-            for (int i = 0; i < cCHeaderDataList.Count; i++)
-            {
-                int tmpCount = 0;
-                for (int j = 0; j < cCHeaderDataList[i].List.Count; j++)
-                {
-                    if (cCHeaderDataList[i].List[j] == cCHeaderData.List[j])
-                    {
-                        tmpCount++;
-                    }
-                }
-                if (tmpCount == cCHeaderDataList[i].List.Count)
-                {
-                    return;
-                }
-            }
-            cCHeaderDataList.Add(cCHeaderData);
+            var ccHeaderData = new CCHeaderData();
+            ccHeaderData.Set(headers);
+            ccHeaderDataHashSet.Add(ccHeaderData);
         }
     }
 
@@ -603,7 +615,7 @@ namespace CSVSplitter.Commands
             this.List = new List<string>();
         }
 
-        public void Add(List<string> data)
+        public void Set(List<string> data)
         {
             List = data;
         }
@@ -616,6 +628,36 @@ namespace CSVSplitter.Commands
                 tmp = "_" + string.Join("_", List).Replace(" ", "").Replace("　", "");
             }
             return tmp;
+        }
+
+        public override int GetHashCode()
+        {
+            int wkHash = 0;
+            foreach (var val in this.List)
+            {
+                wkHash ^= val.GetHashCode();
+            }
+            return wkHash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is CCHeaderData other)
+            {
+                if (this.List.Count != other.List.Count)
+                {
+                    return false;
+                }
+                for (int i = 0; i < this.List.Count; i++)
+                {
+                    if (this.List[i] != other.List[i])
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return false;
         }
     }
 
@@ -805,6 +847,55 @@ namespace CSVSplitter.Commands
                 this._currentRecord = null;
                 this._rawRecord = null;
                 Close();
+            }
+        }
+    }
+
+    public class UpdateProgressStatus
+    {
+        private ViewModels.MainWindowViewModel _viewModel;
+        private long _totalAmount;
+        private long _updateTiming;
+        private long _previousUpdateCount = 0;
+        private long _count;
+        public UpdateProgressStatus(ViewModels.MainWindowViewModel viewModel)
+        {
+            this._viewModel = viewModel;
+            this._totalAmount = 0;
+            this._updateTiming = 1;
+            this._count = 0;
+        }
+
+        public void SetTotalAmount(long totalAmount)
+        {
+            this._totalAmount = totalAmount;
+            this._updateTiming = totalAmount / 100; // 進捗を100分割
+            this._previousUpdateCount = 0;
+            UpdateProgress();
+        }
+        public void SetCount(long count)
+        {
+            this._count = count;
+            UpdateProgress();
+        }
+        public void IncrementCount(long increment = 1)
+        {
+            this._count += increment;
+            UpdateProgress();
+        }
+        public void ResetViewProgress()
+        {
+            this._viewModel.ProgressValue = (int)((double)this._count / (double)this._totalAmount * 100);
+        }
+        public void UpdateProgress()
+        {
+            if (this._totalAmount > 0 && this._updateTiming > 0)
+            {
+                if (this._count - this._previousUpdateCount >= this._updateTiming)
+                {
+                    this._viewModel.ProgressValue = (int)((double)this._count / (double)this._totalAmount * 100);
+                    this._previousUpdateCount = this._count;
+                }
             }
         }
     }

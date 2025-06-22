@@ -34,13 +34,22 @@ namespace CSVSplitter.Commands
 
         public void Execute(object parameter)
         {
-            var dlg = new Microsoft.WindowsAPICodePack.Dialogs.CommonOpenFileDialog();
-            dlg.IsFolderPicker = true;
-            dlg.Title = "出力先フォルダを選択してください。";
-            dlg.InitialDirectory = this._viewModel.OutputFolder;
-            if (dlg.ShowDialog() == Microsoft.WindowsAPICodePack.Dialogs.CommonFileDialogResult.Ok)
+            try
             {
-                this._viewModel.OutputFolder = dlg.FileName;
+                var dlg = new Microsoft.WindowsAPICodePack.Dialogs.CommonOpenFileDialog();
+                dlg.IsFolderPicker = true;
+                dlg.Title = "出力先フォルダを選択してください。";
+                dlg.InitialDirectory = this._viewModel.OutputFolder;
+                if (dlg.ShowDialog() == Microsoft.WindowsAPICodePack.Dialogs.CommonFileDialogResult.Ok)
+                {
+                    this._viewModel.OutputFolder = dlg.FileName;
+                }
+            }
+            catch (Exception e)
+            {
+                System.Windows.MessageBox.Show("フォルダを選択する際にエラーが発生しました: " + e.Message);
+                Utils.DebugTool.WriteLine("Error selecting folder: " + e.ToString(), true);
+                throw e;
             }
         }
     }
