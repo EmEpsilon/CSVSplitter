@@ -732,13 +732,8 @@ namespace CSVSplitter.Models
                     continue;
                 }
 
-                // EUC-JP 2-byte lead bytes are 0xA1-0xFE, but this detector is
-                // intentionally conservative to avoid CP932 false positives.
-                // 0xA1-0xDF overlaps CP932 single-byte half-width katakana and
-                // 0xE0-0xFC overlaps CP932 extended lead bytes, both of which can
-                // misclassify CP932 data as EUC-JP when this check runs before the
-                // CP932 fallback. Therefore only 0xFD-0xFE are accepted here.
-                if (b >= 0xFD && b <= 0xFE)
+                // EUC-JP 2-byte lead bytes are 0xA1-0xFE.
+                if (b >= 0xA1 && b <= 0xFE)
                 {
                     if (i + 1 >= buffer.Length)
                     {
