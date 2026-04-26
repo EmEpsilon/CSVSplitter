@@ -453,14 +453,14 @@ namespace CSVSplitter.Models
                 return utf16Encoding;
             }
 
-            if (IsValidUtf8(buffer, allowIncompleteTail))
-            {
-                return new System.Text.UTF8Encoding(false);
-            }
-
             if (IsLikelyIso2022Jp(buffer, allowIncompleteTail))
             {
                 return System.Text.Encoding.GetEncoding("iso-2022-jp");
+            }
+
+            if (IsValidUtf8(buffer, allowIncompleteTail))
+            {
+                return new System.Text.UTF8Encoding(false);
             }
 
             if (IsValidEucJp(buffer, allowIncompleteTail))
