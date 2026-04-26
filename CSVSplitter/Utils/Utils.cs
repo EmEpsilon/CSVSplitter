@@ -10,7 +10,12 @@ namespace CSVSplitter.Utils
     {
         public static string GetAssemblyPath()
         {
-            return System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
+            {
+                return AppContext.BaseDirectory;
+            }
+
+            return Environment.CurrentDirectory;
         }
 
         
