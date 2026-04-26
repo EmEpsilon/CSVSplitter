@@ -458,6 +458,16 @@ namespace CSVSplitter.Models
                 return new System.Text.UTF8Encoding(false);
             }
 
+            if (IsLikelyIso2022Jp(buffer))
+            {
+                return System.Text.Encoding.GetEncoding("iso-2022-jp");
+            }
+
+            if (IsValidEucJp(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding("euc-jp");
+            }
+
             return System.Text.Encoding.GetEncoding(932);
         }
 
@@ -632,6 +642,118 @@ namespace CSVSplitter.Models
                 i += expectedLength;
             }
             return true;
+        }
+
+        private bool IsLikelyIso2022Jp(byte[] buffer)
+        {
+            const byte ESC = 0x1B;
+            int escapeSequenceCount = 0;
+
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                if (buffer[i] != ESC)
+                {
+                    continue;
+                }
+
+                if (i + 2 >= buffer.Length)
+                {
+                    return false;
+                }
+
+                byte b1 = buffer[i + 1];
+                byte b2 = buffer[i + 2];
+
+                bool isKnownSequence =
+                    (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42)) ||
+                    (b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49)) ||
+                    (b1 == 0x26 && b2 == 0x40 && i + 3 < buffer.Length && buffer[i + 3] == 0x1B);
+
+                if (!isKnownSequence)
+                {
+                    return false;
+                }
+
+                escapeSequenceCount++;
+            }
+
+            return escapeSequenceCount > 0;
+        }
+
+        private bool IsValidEucJp(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            bool hasMultibyte = false;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                if (b == 0x8E)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail;
+                    }
+
+                    byte kana = buffer[i + 1];
+                    if (kana < 0xA1 || kana > 0xDF)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    i += 2;
+                    continue;
+                }
+
+                if (b == 0x8F)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    byte b3 = buffer[i + 2];
+                    if (b2 < 0xA1 || b2 > 0xFE || b3 < 0xA1 || b3 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    i += 3;
+                    continue;
+                }
+
+                if (b >= 0xA1 && b <= 0xFE)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    if (b2 < 0xA1 || b2 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    i += 2;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return hasMultibyte;
         }
 
         private bool CheckBom(byte[] buffer)
