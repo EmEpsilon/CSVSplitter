@@ -458,6 +458,16 @@ namespace CSVSplitter.Models
                 return new System.Text.UTF8Encoding(false);
             }
 
+            if (IsLikelyIso2022Jp(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding("iso-2022-jp");
+            }
+
+            if (IsValidEucJp(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding("euc-jp");
+            }
+
             return System.Text.Encoding.GetEncoding(932);
         }
 
@@ -632,6 +642,242 @@ namespace CSVSplitter.Models
                 i += expectedLength;
             }
             return true;
+        }
+
+        private bool IsLikelyIso2022Jp(byte[] buffer, bool allowIncompleteTail)
+        {
+            const byte ESC = 0x1B;
+            int escapeSequenceCount = 0;
+
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                if (buffer[i] != ESC)
+                {
+                    continue;
+                }
+
+                if (i + 1 >= buffer.Length)
+                {
+                    return allowIncompleteTail && escapeSequenceCount > 0;
+                }
+
+                byte b1 = buffer[i + 1];
+                bool isKnownSequence;
+
+                if (b1 == 0x24 || b1 == 0x28)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    byte b2 = buffer[i + 2];
+                    if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
+                    {
+                        isKnownSequence = true;
+                    }
+                    else if (b1 == 0x24 && b2 == 0x28)
+                    {
+                        if (i + 3 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
+                        isKnownSequence = buffer[i + 3] == 0x44;
+                    }
+                    else
+                    {
+                        isKnownSequence = b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49);
+                    }
+                }
+                else if (b1 == 0x26)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    if (buffer[i + 2] != 0x40)
+                    {
+                        return false;
+                    }
+
+                    if (i + 3 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    isKnownSequence = buffer[i + 3] == ESC;
+                }
+                else
+                {
+                    isKnownSequence = false;
+                }
+
+                if (!isKnownSequence)
+                {
+                    return false;
+                }
+
+                escapeSequenceCount++;
+            }
+
+            return escapeSequenceCount > 0;
+        }
+
+        private bool IsValidEucJp(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            bool hasMultibyte = false;
+            bool hasStrongEucSignature = false;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                if (b == 0x8E)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte kana = buffer[i + 1];
+                    if (kana < 0xA1 || kana > 0xDF)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    i += 2;
+                    continue;
+                }
+
+                if (b == 0x8F)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    byte b3 = buffer[i + 2];
+                    if (b2 < 0xA1 || b2 > 0xFE || b3 < 0xA1 || b3 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    hasStrongEucSignature = true;
+                    i += 3;
+                    continue;
+                }
+
+                // EUC-JP 2-byte lead bytes are 0xA1-0xFE.
+                if (b >= 0xA1 && b <= 0xFE)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    if (b2 < 0xA1 || b2 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    if (b <= 0xDF)
+                    {
+                        // CP932 では 0xA1-0xDF は単独の半角カナ領域のため、
+                        // この帯域を先頭にした 2 バイト並びは EUC-JP の有力な手掛かりになる。
+                        hasStrongEucSignature = true;
+                    }
+                    i += 2;
+                    continue;
+                }
+
+                return false;
+            }
+
+            if (!hasMultibyte)
+            {
+                return false;
+            }
+
+            if (hasStrongEucSignature)
+            {
+                return true;
+            }
+
+            // 0x8E xx / 0xE0-0xEF 系だけで成立する場合は CP932 と衝突しやすいため、
+            // CP932 としても成立する場合は EUC-JP と見なさずフォールバックへ回す。
+            return !IsValidCp932(buffer, allowIncompleteTail);
+        }
+
+        private bool IsValidCp932(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            int validLength = buffer.Length;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F || (b >= 0xA1 && b <= 0xDF))
+                {
+                    i++;
+                    continue;
+                }
+
+                bool isLeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                if (!isLeadByte)
+                {
+                    return false;
+                }
+
+                if (i + 1 >= buffer.Length)
+                {
+                    if (!allowIncompleteTail)
+                    {
+                        return false;
+                    }
+
+                    validLength = i;
+                    break;
+                }
+
+                byte trail = buffer[i + 1];
+                bool isTrailByte = (trail >= 0x40 && trail <= 0x7E) || (trail >= 0x80 && trail <= 0xFC);
+                if (!isTrailByte)
+                {
+                    return false;
+                }
+
+                i += 2;
+            }
+
+            try
+            {
+                System.Text.Encoding strictCp932 = System.Text.Encoding.GetEncoding(
+                    932,
+                    System.Text.EncoderFallback.ExceptionFallback,
+                    System.Text.DecoderFallback.ExceptionFallback);
+                strictCp932.GetCharCount(buffer, 0, validLength);
+                return true;
+            }
+            catch (System.Text.DecoderFallbackException)
+            {
+                return false;
+            }
         }
 
         private bool CheckBom(byte[] buffer)
