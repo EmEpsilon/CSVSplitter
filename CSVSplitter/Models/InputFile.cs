@@ -237,11 +237,26 @@ namespace CSVSplitter.Models
 
         public void Analyze()
         {
-            if(!File.Exists(this.FilePath))
+            this.IsCsvFile = false;
+            this.IsTextFile = false;
+            this.Encoding = null;
+            this.NewLine = null;
+            this.RawHeader = null;
+            this.Header = new string[0];
+            this.Delimiter = '\0';
+            this.HasBom = false;
+            this.HasDoubleQuote = false;
+
+            if (!File.Exists(this.FilePath))
             {
                 this.IsAnalyzed = false;
-                this.IsTextFile = false;
-                this.Encoding = null;
+                return;
+            }
+
+            var fileInfo = new FileInfo(this.FilePath);
+            if (fileInfo.Length == 0)
+            {
+                this.IsAnalyzed = true;
                 return;
             }
 
@@ -249,7 +264,6 @@ namespace CSVSplitter.Models
             if (this._encoding is null)
             {
                 this.IsAnalyzed = true;
-                this.IsTextFile = false;
                 return;
             }
 
@@ -271,6 +285,12 @@ namespace CSVSplitter.Models
                 // とりあえず、一行目を読み込む
                 var header = reader.ReadLine();
                 this.RawHeader = header;
+                if (header is null)
+                {
+                    this.IsTextFile = false;
+                    this.IsAnalyzed = true;
+                    return;
+                }
 
                 int conmaCount = header.Count(c => c == ',');
                 int tabCount = header.Count(c => c == '\t');
@@ -387,7 +407,7 @@ namespace CSVSplitter.Models
 
             if (readSize <= 0)
             {
-                return new System.Text.UTF8Encoding(false);
+                return null;
             }
 
             byte[] buffer = new byte[readSize];
@@ -427,7 +447,8 @@ namespace CSVSplitter.Models
                 }
             }
 
-            if (IsValidUtf8(buffer))
+            var allowIncompleteTail = file.Length > readSize;
+            if (IsValidUtf8(buffer, allowIncompleteTail))
             {
                 return new System.Text.UTF8Encoding(false);
             }
@@ -435,48 +456,86 @@ namespace CSVSplitter.Models
             return System.Text.Encoding.GetEncoding(932);
         }
 
-        private bool IsValidUtf8(byte[] buffer)
+        private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
         {
-            int expectedContinuationBytes = 0;
-
-            foreach (var b in buffer)
+            int i = 0;
+            while (i < buffer.Length)
             {
-                if (expectedContinuationBytes == 0)
-                {
-                    if ((b & 0b1000_0000) == 0)
-                    {
-                        continue;
-                    }
+                byte b = buffer[i];
 
-                    if ((b & 0b1110_0000) == 0b1100_0000)
-                    {
-                        expectedContinuationBytes = 1;
-                    }
-                    else if ((b & 0b1111_0000) == 0b1110_0000)
-                    {
-                        expectedContinuationBytes = 2;
-                    }
-                    else if ((b & 0b1111_1000) == 0b1111_0000)
-                    {
-                        expectedContinuationBytes = 3;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                int expectedLength;
+                if (b >= 0xC2 && b <= 0xDF)
+                {
+                    expectedLength = 2;
+                }
+                else if (b >= 0xE0 && b <= 0xEF)
+                {
+                    expectedLength = 3;
+                }
+                else if (b >= 0xF0 && b <= 0xF4)
+                {
+                    expectedLength = 4;
                 }
                 else
                 {
-                    if ((b & 0b1100_0000) != 0b1000_0000)
+                    return false;
+                }
+
+                if (i + expectedLength > buffer.Length)
+                {
+                    return allowIncompleteTail;
+                }
+
+                if ((buffer[i + 1] & 0xC0) != 0x80)
+                {
+                    return false;
+                }
+
+                if (expectedLength >= 3)
+                {
+                    if ((buffer[i + 2] & 0xC0) != 0x80)
                     {
                         return false;
                     }
 
-                    expectedContinuationBytes--;
-                }
-            }
+                    if (b == 0xE0 && buffer[i + 1] < 0xA0)
+                    {
+                        return false;
+                    }
 
-            return expectedContinuationBytes == 0;
+                    if (b == 0xED && buffer[i + 1] > 0x9F)
+                    {
+                        return false;
+                    }
+                }
+
+                if (expectedLength == 4)
+                {
+                    if ((buffer[i + 3] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF0 && buffer[i + 1] < 0x90)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF4 && buffer[i + 1] > 0x8F)
+                    {
+                        return false;
+                    }
+                }
+
+                i += expectedLength;
+            }
+            return true;
         }
 
         private bool CheckBom(byte[] buffer)
