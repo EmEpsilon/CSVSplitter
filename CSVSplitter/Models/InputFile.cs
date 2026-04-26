@@ -470,63 +470,81 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            int pairCount = Math.Min(buffer.Length / 2, 4096);
-            if (pairCount == 0)
+            int sampleLength = Math.Min(buffer.Length, 8192);
+            sampleLength -= sampleLength % 2;
+            if (sampleLength < 4)
             {
                 return false;
             }
 
-            int evenNull = 0;
-            int oddNull = 0;
-            int evenAscii = 0;
-            int oddAscii = 0;
+            double littleEndianScore = ScoreUtf16WithoutBom(buffer, sampleLength, false);
+            double bigEndianScore = ScoreUtf16WithoutBom(buffer, sampleLength, true);
+            double bestScore = Math.Max(littleEndianScore, bigEndianScore);
 
-            for (int i = 0; i < pairCount; i++)
+            const double strongConfidenceScore = 0.70;
+            const double likelyScore = 0.55;
+            const double minDirectionGap = 0.08;
+
+            if (bestScore < likelyScore)
             {
-                byte even = buffer[i * 2];
-                byte odd = buffer[(i * 2) + 1];
+                return false;
+            }
 
-                if (even == 0x00)
+            if (Math.Abs(littleEndianScore - bigEndianScore) < minDirectionGap && bestScore < strongConfidenceScore)
+            {
+                return false;
+            }
+
+            encoding = littleEndianScore >= bigEndianScore
+                ? (System.Text.Encoding)new System.Text.UnicodeEncoding(false, false)
+                : new System.Text.UnicodeEncoding(true, false);
+            return true;
+        }
+
+        private double ScoreUtf16WithoutBom(byte[] buffer, int sampleLength, bool bigEndian)
+        {
+            int pairCount = sampleLength / 2;
+            int nullHighBytes = 0;
+            int nullLowBytes = 0;
+            int commonTextLowBytes = 0;
+            int replacementRisk = 0;
+
+            for (int i = 0; i < sampleLength; i += 2)
+            {
+                byte high = bigEndian ? buffer[i] : buffer[i + 1];
+                byte low = bigEndian ? buffer[i + 1] : buffer[i];
+
+                if (high == 0x00)
                 {
-                    evenNull++;
-                }
-                if (odd == 0x00)
-                {
-                    oddNull++;
+                    nullHighBytes++;
                 }
 
-                if (IsCommonTextByte(even))
+                if (low == 0x00)
                 {
-                    evenAscii++;
+                    nullLowBytes++;
                 }
-                if (IsCommonTextByte(odd))
+
+                if (IsCommonTextByte(low))
                 {
-                    oddAscii++;
+                    commonTextLowBytes++;
+                }
+
+                if (high >= 0xD8 && high <= 0xDF)
+                {
+                    replacementRisk++;
                 }
             }
 
-            const double nullRatioHigh = 0.30;
-            const double nullRatioLow = 0.05;
-            const double textRatioMin = 0.30;
+            double highNullRatio = (double)nullHighBytes / pairCount;
+            double lowNullRatio = (double)nullLowBytes / pairCount;
+            double lowTextRatio = (double)commonTextLowBytes / pairCount;
+            double replacementRiskRatio = (double)replacementRisk / pairCount;
 
-            double evenNullRatio = (double)evenNull / pairCount;
-            double oddNullRatio = (double)oddNull / pairCount;
-            double evenTextRatio = (double)evenAscii / pairCount;
-            double oddTextRatio = (double)oddAscii / pairCount;
+            double nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
 
-            if (oddNullRatio >= nullRatioHigh && evenNullRatio <= nullRatioLow && evenTextRatio >= textRatioMin)
-            {
-                encoding = new System.Text.UnicodeEncoding(false, false);
-                return true;
-            }
-
-            if (evenNullRatio >= nullRatioHigh && oddNullRatio <= nullRatioLow && oddTextRatio >= textRatioMin)
-            {
-                encoding = new System.Text.UnicodeEncoding(true, false);
-                return true;
-            }
-
-            return false;
+            return (nullLaneBias * 0.40)
+                + (lowTextRatio * 0.35)
+                + ((1.0 - replacementRiskRatio) * 0.25);
         }
 
         private bool IsCommonTextByte(byte value)
