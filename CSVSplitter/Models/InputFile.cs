@@ -672,9 +672,24 @@ namespace CSVSplitter.Models
                     }
 
                     byte b2 = buffer[i + 2];
-                    isKnownSequence =
-                        (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42)) ||
-                        (b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49));
+                    if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
+                    {
+                        isKnownSequence = true;
+                    }
+                    else if (b1 == 0x24 && b2 == 0x28)
+                    {
+                        if (i + 3 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
+                        isKnownSequence = buffer[i + 3] == 0x44;
+                    }
+                    else
+                    {
+                        isKnownSequence = b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49);
+                    }
                 }
                 else if (b1 == 0x26)
                 {
@@ -811,6 +826,7 @@ namespace CSVSplitter.Models
         private bool IsValidCp932(byte[] buffer, bool allowIncompleteTail)
         {
             int i = 0;
+            int validLength = buffer.Length;
 
             while (i < buffer.Length)
             {
@@ -830,7 +846,13 @@ namespace CSVSplitter.Models
 
                 if (i + 1 >= buffer.Length)
                 {
-                    return allowIncompleteTail;
+                    if (!allowIncompleteTail)
+                    {
+                        return false;
+                    }
+
+                    validLength = i;
+                    break;
                 }
 
                 byte trail = buffer[i + 1];
@@ -843,7 +865,19 @@ namespace CSVSplitter.Models
                 i += 2;
             }
 
-            return true;
+            try
+            {
+                System.Text.Encoding strictCp932 = System.Text.Encoding.GetEncoding(
+                    932,
+                    System.Text.EncoderFallback.ExceptionFallback,
+                    System.Text.DecoderFallback.ExceptionFallback);
+                strictCp932.GetCharCount(buffer, 0, validLength);
+                return true;
+            }
+            catch (System.Text.DecoderFallbackException)
+            {
+                return false;
+            }
         }
 
         private bool CheckBom(byte[] buffer)
