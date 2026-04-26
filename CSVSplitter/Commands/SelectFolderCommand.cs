@@ -36,20 +36,21 @@ namespace CSVSplitter.Commands
         {
             try
             {
-                var dlg = new Microsoft.WindowsAPICodePack.Dialogs.CommonOpenFileDialog();
-                dlg.IsFolderPicker = true;
-                dlg.Title = "出力先フォルダを選択してください。";
-                dlg.InitialDirectory = this._viewModel.OutputFolder;
-                if (dlg.ShowDialog() == Microsoft.WindowsAPICodePack.Dialogs.CommonFileDialogResult.Ok)
+                using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
                 {
-                    this._viewModel.OutputFolder = dlg.FileName;
+                    dlg.Description = "出力先フォルダを選択してください。";
+                    dlg.InitialDirectory = this._viewModel.OutputFolder;
+                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        this._viewModel.OutputFolder = dlg.SelectedPath;
+                    }
                 }
             }
             catch (Exception e)
             {
                 System.Windows.MessageBox.Show("フォルダを選択する際にエラーが発生しました: " + e.Message);
                 Utils.DebugTool.WriteLine("Error selecting folder: " + e.ToString(), true);
-                throw e;
+                throw;
             }
         }
     }

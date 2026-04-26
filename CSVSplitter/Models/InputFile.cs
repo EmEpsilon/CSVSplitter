@@ -381,53 +381,102 @@ namespace CSVSplitter.Models
 
         private System.Text.Encoding GetEncoding(string filename)
         {
-            int maxSize = 512 * 1024;
+            const int maxSize = 512 * 1024;
             var file = new System.IO.FileInfo(filename);
-            System.Text.Encoding result = null;
+            var readSize = (int)Math.Min(maxSize, file.Length);
 
-            if (maxSize > file.Length)
+            if (readSize <= 0)
             {
-                using (Hnx8.ReadJEnc.FileReader reader = new Hnx8.ReadJEnc.FileReader(file))
-                {
-                    Hnx8.ReadJEnc.CharCode code = reader.Read(file);
-                    var tmpResult = code.GetEncoding();
-
-                    if (tmpResult != null)
-                    {
-                        result = tmpResult;
-                    }
-
-                }
+                return new System.Text.UTF8Encoding(false);
             }
-            else
+
+            byte[] buffer = new byte[readSize];
+            using (var fs = file.OpenRead())
             {
-                // 512KBまで読み込む
-                byte[] buffer = new byte[maxSize];
-                using (var fs = file.OpenRead())
+                fs.Read(buffer, 0, buffer.Length);
+            }
+
+            if (buffer.Length >= 4)
+            {
+                if (buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0xFE && buffer[3] == 0xFF)
                 {
-                    fs.Read(buffer, 0, buffer.Length);
+                    return new System.Text.UTF32Encoding(true, true);
                 }
-                if (!(buffer is null))
+
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE && buffer[2] == 0x00 && buffer[3] == 0x00)
                 {
-                    string tmpEncResult = null;
-                    const int maxLoop = 30;
-
-                    for (int i = 0; i < maxLoop; i++)
-                    {
-                        byte[] tmpBytes = new byte[buffer.Length - i];
-                        Array.Copy(buffer, i, tmpBytes, 0, buffer.Length - i);
-
-                        Hnx8.ReadJEnc.CharCode code = Hnx8.ReadJEnc.ReadJEnc.JP.GetEncoding(tmpBytes, tmpBytes.Length, out tmpEncResult);
-                        if (tmpEncResult != null)
-                        {
-                            result = code.GetEncoding();
-                            break;
-                        }
-                    }
+                    return new System.Text.UTF32Encoding(false, true);
                 }
             }
 
-            return result;
+            if (buffer.Length >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+            {
+                return new System.Text.UTF8Encoding(true);
+            }
+
+            if (buffer.Length >= 2)
+            {
+                if (buffer[0] == 0xFE && buffer[1] == 0xFF)
+                {
+                    return new System.Text.UnicodeEncoding(true, true);
+                }
+
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE)
+                {
+                    return new System.Text.UnicodeEncoding(false, true);
+                }
+            }
+
+            if (IsValidUtf8(buffer))
+            {
+                return new System.Text.UTF8Encoding(false);
+            }
+
+            return System.Text.Encoding.GetEncoding(932);
+        }
+
+        private bool IsValidUtf8(byte[] buffer)
+        {
+            int expectedContinuationBytes = 0;
+
+            foreach (var b in buffer)
+            {
+                if (expectedContinuationBytes == 0)
+                {
+                    if ((b & 0b1000_0000) == 0)
+                    {
+                        continue;
+                    }
+
+                    if ((b & 0b1110_0000) == 0b1100_0000)
+                    {
+                        expectedContinuationBytes = 1;
+                    }
+                    else if ((b & 0b1111_0000) == 0b1110_0000)
+                    {
+                        expectedContinuationBytes = 2;
+                    }
+                    else if ((b & 0b1111_1000) == 0b1111_0000)
+                    {
+                        expectedContinuationBytes = 3;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    if ((b & 0b1100_0000) != 0b1000_0000)
+                    {
+                        return false;
+                    }
+
+                    expectedContinuationBytes--;
+                }
+            }
+
+            return expectedContinuationBytes == 0;
         }
 
         private bool CheckBom(byte[] buffer)
