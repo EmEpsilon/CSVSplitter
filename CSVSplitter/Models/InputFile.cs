@@ -448,12 +448,90 @@ namespace CSVSplitter.Models
             }
 
             var allowIncompleteTail = file.Length > readSize;
+            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
+            {
+                return utf16Encoding;
+            }
+
             if (IsValidUtf8(buffer, allowIncompleteTail))
             {
                 return new System.Text.UTF8Encoding(false);
             }
 
             return System.Text.Encoding.GetEncoding(932);
+        }
+
+        private bool TryDetectUtf16WithoutBom(byte[] buffer, out System.Text.Encoding encoding)
+        {
+            encoding = null;
+
+            if (buffer.Length < 4)
+            {
+                return false;
+            }
+
+            int pairCount = Math.Min(buffer.Length / 2, 4096);
+            if (pairCount == 0)
+            {
+                return false;
+            }
+
+            int evenNull = 0;
+            int oddNull = 0;
+            int evenAscii = 0;
+            int oddAscii = 0;
+
+            for (int i = 0; i < pairCount; i++)
+            {
+                byte even = buffer[i * 2];
+                byte odd = buffer[(i * 2) + 1];
+
+                if (even == 0x00)
+                {
+                    evenNull++;
+                }
+                if (odd == 0x00)
+                {
+                    oddNull++;
+                }
+
+                if (IsCommonTextByte(even))
+                {
+                    evenAscii++;
+                }
+                if (IsCommonTextByte(odd))
+                {
+                    oddAscii++;
+                }
+            }
+
+            const double nullRatioHigh = 0.30;
+            const double nullRatioLow = 0.05;
+            const double textRatioMin = 0.30;
+
+            double evenNullRatio = (double)evenNull / pairCount;
+            double oddNullRatio = (double)oddNull / pairCount;
+            double evenTextRatio = (double)evenAscii / pairCount;
+            double oddTextRatio = (double)oddAscii / pairCount;
+
+            if (oddNullRatio >= nullRatioHigh && evenNullRatio <= nullRatioLow && evenTextRatio >= textRatioMin)
+            {
+                encoding = new System.Text.UnicodeEncoding(false, false);
+                return true;
+            }
+
+            if (evenNullRatio >= nullRatioHigh && oddNullRatio <= nullRatioLow && oddTextRatio >= textRatioMin)
+            {
+                encoding = new System.Text.UnicodeEncoding(true, false);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsCommonTextByte(byte value)
+        {
+            return value == 0x09 || value == 0x0A || value == 0x0D || (value >= 0x20 && value <= 0x7E);
         }
 
         private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
