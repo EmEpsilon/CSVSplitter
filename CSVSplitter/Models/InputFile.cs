@@ -762,9 +762,57 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            // 0x8E xx や 0xE0-0xEF 系だけでは CP932 の並びと衝突しやすいため、
-            // EUC-JP 固有と判断できる手掛かりがある場合にのみ EUC-JP と見なす。
-            return hasMultibyte && hasStrongEucSignature;
+            if (!hasMultibyte)
+            {
+                return false;
+            }
+
+            if (hasStrongEucSignature)
+            {
+                return true;
+            }
+
+            // 0x8E xx / 0xE0-0xEF 系だけで成立する場合は CP932 と衝突しやすいため、
+            // CP932 としても成立する場合は EUC-JP と見なさずフォールバックへ回す。
+            return !IsValidCp932(buffer, allowIncompleteTail);
+        }
+
+        private bool IsValidCp932(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F || (b >= 0xA1 && b <= 0xDF))
+                {
+                    i++;
+                    continue;
+                }
+
+                bool isLeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                if (!isLeadByte)
+                {
+                    return false;
+                }
+
+                if (i + 1 >= buffer.Length)
+                {
+                    return allowIncompleteTail;
+                }
+
+                byte trail = buffer[i + 1];
+                bool isTrailByte = (trail >= 0x40 && trail <= 0x7E) || (trail >= 0x80 && trail <= 0xFC);
+                if (!isTrailByte)
+                {
+                    return false;
+                }
+
+                i += 2;
+            }
+
+            return true;
         }
 
         private bool CheckBom(byte[] buffer)
