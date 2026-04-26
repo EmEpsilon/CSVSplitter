@@ -732,7 +732,11 @@ namespace CSVSplitter.Models
                     continue;
                 }
 
-                if (b >= 0xA1 && b <= 0xFE)
+                // 0xA1-0xDF is the CP932 single-byte half-width katakana range.
+                // Treating this range as a lead byte for EUC-JP 2-byte sequences
+                // causes false positives for CP932 files that contain consecutive
+                // half-width kana, so we only accept 0xE0-0xFE here.
+                if (b >= 0xE0 && b <= 0xFE)
                 {
                     if (i + 1 >= buffer.Length)
                     {
