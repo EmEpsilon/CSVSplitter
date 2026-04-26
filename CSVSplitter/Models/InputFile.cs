@@ -648,6 +648,7 @@ namespace CSVSplitter.Models
         {
             const byte ESC = 0x1B;
             int escapeSequenceCount = 0;
+            bool hasJisMultibyteDesignation = false;
 
             for (int i = 0; i < buffer.Length; i++)
             {
@@ -675,6 +676,7 @@ namespace CSVSplitter.Models
                     if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
                     {
                         isKnownSequence = true;
+                        hasJisMultibyteDesignation = true;
                     }
                     else if (b1 == 0x24 && b2 == 0x28)
                     {
@@ -685,6 +687,10 @@ namespace CSVSplitter.Models
 
                         // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
                         isKnownSequence = buffer[i + 3] == 0x44;
+                        if (isKnownSequence)
+                        {
+                            hasJisMultibyteDesignation = true;
+                        }
                     }
                     else
                     {
@@ -723,7 +729,7 @@ namespace CSVSplitter.Models
                 escapeSequenceCount++;
             }
 
-            return escapeSequenceCount > 0;
+            return escapeSequenceCount > 0 && hasJisMultibyteDesignation;
         }
 
         private bool IsValidEucJp(byte[] buffer, bool allowIncompleteTail)
