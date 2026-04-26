@@ -468,7 +468,17 @@ namespace CSVSplitter.Models
                 return System.Text.Encoding.GetEncoding("euc-jp");
             }
 
-            return System.Text.Encoding.GetEncoding(932);
+            if (!IsLikelyTextContent(buffer))
+            {
+                return null;
+            }
+
+            if (IsValidCp932(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding(932);
+            }
+
+            return null;
         }
 
         private bool TryDetectUtf16WithoutBom(byte[] buffer, out System.Text.Encoding encoding)
@@ -884,6 +894,72 @@ namespace CSVSplitter.Models
             {
                 return false;
             }
+        }
+
+        private bool IsLikelyTextContent(byte[] buffer)
+        {
+            if (buffer.Length == 0)
+            {
+                return false;
+            }
+
+            int sampleLength = Math.Min(buffer.Length, 8192);
+            int nullByteCount = 0;
+            int controlByteCount = 0;
+            int textLikeByteCount = 0;
+            int cp932LeadByteCount = 0;
+            int cp932KanaByteCount = 0;
+
+            for (int i = 0; i < sampleLength; i++)
+            {
+                byte b = buffer[i];
+
+                if (b == 0x00)
+                {
+                    nullByteCount++;
+                }
+
+                if ((b <= 0x08) || b == 0x0B || b == 0x0C || (b >= 0x0E && b <= 0x1F) || b == 0x7F)
+                {
+                    controlByteCount++;
+                }
+
+                if (b == 0x09 || b == 0x0A || b == 0x0D || (b >= 0x20 && b <= 0x7E))
+                {
+                    textLikeByteCount++;
+                    continue;
+                }
+
+                if (b >= 0xA1 && b <= 0xDF)
+                {
+                    cp932KanaByteCount++;
+                }
+
+                bool isCp932LeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                if (isCp932LeadByte)
+                {
+                    cp932LeadByteCount++;
+                }
+            }
+
+            if ((double)nullByteCount / sampleLength > 0.01)
+            {
+                return false;
+            }
+
+            if ((double)controlByteCount / sampleLength > 0.02)
+            {
+                return false;
+            }
+
+            double textLikeRatio = (double)textLikeByteCount / sampleLength;
+            if (textLikeRatio >= 0.60)
+            {
+                return true;
+            }
+
+            int cp932HintByteCount = cp932LeadByteCount + cp932KanaByteCount;
+            return cp932HintByteCount > 0 && (double)(textLikeByteCount + cp932HintByteCount) / sampleLength >= 0.85;
         }
 
         private bool CheckBom(byte[] buffer)
