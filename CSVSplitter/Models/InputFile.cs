@@ -699,7 +699,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 1 >= buffer.Length)
                     {
-                        return allowIncompleteTail;
+                        return allowIncompleteTail && hasMultibyte;
                     }
 
                     byte kana = buffer[i + 1];
@@ -717,7 +717,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 2 >= buffer.Length)
                     {
-                        return allowIncompleteTail;
+                        return allowIncompleteTail && hasMultibyte;
                     }
 
                     byte b2 = buffer[i + 1];
@@ -736,7 +736,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 1 >= buffer.Length)
                     {
-                        return allowIncompleteTail;
+                        return allowIncompleteTail && hasMultibyte;
                     }
 
                     byte b2 = buffer[i + 1];
