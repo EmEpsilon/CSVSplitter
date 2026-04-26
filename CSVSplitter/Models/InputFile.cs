@@ -458,7 +458,7 @@ namespace CSVSplitter.Models
                 return new System.Text.UTF8Encoding(false);
             }
 
-            if (IsLikelyIso2022Jp(buffer))
+            if (IsLikelyIso2022Jp(buffer, allowIncompleteTail))
             {
                 return System.Text.Encoding.GetEncoding("iso-2022-jp");
             }
@@ -644,7 +644,7 @@ namespace CSVSplitter.Models
             return true;
         }
 
-        private bool IsLikelyIso2022Jp(byte[] buffer)
+        private bool IsLikelyIso2022Jp(byte[] buffer, bool allowIncompleteTail)
         {
             const byte ESC = 0x1B;
             int escapeSequenceCount = 0;
@@ -656,18 +656,49 @@ namespace CSVSplitter.Models
                     continue;
                 }
 
-                if (i + 2 >= buffer.Length)
+                if (i + 1 >= buffer.Length)
                 {
-                    return false;
+                    return allowIncompleteTail && escapeSequenceCount > 0;
                 }
 
                 byte b1 = buffer[i + 1];
-                byte b2 = buffer[i + 2];
+                bool isKnownSequence;
 
-                bool isKnownSequence =
-                    (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42)) ||
-                    (b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49)) ||
-                    (b1 == 0x26 && b2 == 0x40 && i + 3 < buffer.Length && buffer[i + 3] == 0x1B);
+                if (b1 == 0x24 || b1 == 0x28)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    byte b2 = buffer[i + 2];
+                    isKnownSequence =
+                        (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42)) ||
+                        (b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49));
+                }
+                else if (b1 == 0x26)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    if (buffer[i + 2] != 0x40)
+                    {
+                        return false;
+                    }
+
+                    if (i + 3 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    isKnownSequence = buffer[i + 3] == ESC;
+                }
+                else
+                {
+                    isKnownSequence = false;
+                }
 
                 if (!isKnownSequence)
                 {
