@@ -684,6 +684,7 @@ namespace CSVSplitter.Models
         {
             int i = 0;
             bool hasMultibyte = false;
+            bool hasStrongEucSignature = false;
 
             while (i < buffer.Length)
             {
@@ -699,7 +700,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 1 >= buffer.Length)
                     {
-                        return allowIncompleteTail && hasMultibyte;
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
                     }
 
                     byte kana = buffer[i + 1];
@@ -717,7 +718,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 2 >= buffer.Length)
                     {
-                        return allowIncompleteTail && hasMultibyte;
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
                     }
 
                     byte b2 = buffer[i + 1];
@@ -728,6 +729,7 @@ namespace CSVSplitter.Models
                     }
 
                     hasMultibyte = true;
+                    hasStrongEucSignature = true;
                     i += 3;
                     continue;
                 }
@@ -737,7 +739,7 @@ namespace CSVSplitter.Models
                 {
                     if (i + 1 >= buffer.Length)
                     {
-                        return allowIncompleteTail && hasMultibyte;
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
                     }
 
                     byte b2 = buffer[i + 1];
@@ -747,6 +749,12 @@ namespace CSVSplitter.Models
                     }
 
                     hasMultibyte = true;
+                    if (b <= 0xDF)
+                    {
+                        // CP932 では 0xA1-0xDF は単独の半角カナ領域のため、
+                        // この帯域を先頭にした 2 バイト並びは EUC-JP の有力な手掛かりになる。
+                        hasStrongEucSignature = true;
+                    }
                     i += 2;
                     continue;
                 }
@@ -754,7 +762,9 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            return hasMultibyte;
+            // 0x8E xx や 0xE0-0xEF 系だけでは CP932 の並びと衝突しやすいため、
+            // EUC-JP 固有と判断できる手掛かりがある場合にのみ EUC-JP と見なす。
+            return hasMultibyte && hasStrongEucSignature;
         }
 
         private bool CheckBom(byte[] buffer)
