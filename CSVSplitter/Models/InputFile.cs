@@ -915,6 +915,8 @@ namespace CSVSplitter.Models
             for (int i = 0; i < sampleLength; i++)
             {
                 byte b = buffer[i];
+                bool isCp932LeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                bool isCp932TrailByte = (b >= 0x40 && b <= 0x7E) || (b >= 0x80 && b <= 0xFC);
 
                 if (b == 0x00)
                 {
@@ -929,7 +931,6 @@ namespace CSVSplitter.Models
                 if (b == 0x09 || b == 0x0A || b == 0x0D || (b >= 0x20 && b <= 0x7E))
                 {
                     textLikeByteCount++;
-                    continue;
                 }
 
                 if (b >= 0xA1 && b <= 0xDF)
@@ -937,13 +938,11 @@ namespace CSVSplitter.Models
                     cp932KanaByteCount++;
                 }
 
-                bool isCp932LeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
                 if (isCp932LeadByte)
                 {
                     cp932LeadByteCount++;
                 }
 
-                bool isCp932TrailByte = (b >= 0x40 && b <= 0x7E) || (b >= 0x80 && b <= 0xFC);
                 if (previousWasCp932LeadByte && isCp932TrailByte)
                 {
                     cp932TrailByteCount++;
