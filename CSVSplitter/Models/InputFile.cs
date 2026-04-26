@@ -678,12 +678,22 @@ namespace CSVSplitter.Models
                 }
                 else if (b1 == 0x26)
                 {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    if (buffer[i + 2] != 0x40)
+                    {
+                        return false;
+                    }
+
                     if (i + 3 >= buffer.Length)
                     {
                         return allowIncompleteTail && escapeSequenceCount > 0;
                     }
 
-                    isKnownSequence = buffer[i + 2] == 0x40 && buffer[i + 3] == ESC;
+                    isKnownSequence = buffer[i + 3] == ESC;
                 }
                 else
                 {
