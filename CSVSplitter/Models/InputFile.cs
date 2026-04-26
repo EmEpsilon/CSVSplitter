@@ -908,7 +908,9 @@ namespace CSVSplitter.Models
             int controlByteCount = 0;
             int textLikeByteCount = 0;
             int cp932LeadByteCount = 0;
+            int cp932TrailByteCount = 0;
             int cp932KanaByteCount = 0;
+            bool previousWasCp932LeadByte = false;
 
             for (int i = 0; i < sampleLength; i++)
             {
@@ -940,6 +942,14 @@ namespace CSVSplitter.Models
                 {
                     cp932LeadByteCount++;
                 }
+
+                bool isCp932TrailByte = (b >= 0x40 && b <= 0x7E) || (b >= 0x80 && b <= 0xFC);
+                if (previousWasCp932LeadByte && isCp932TrailByte)
+                {
+                    cp932TrailByteCount++;
+                }
+
+                previousWasCp932LeadByte = isCp932LeadByte;
             }
 
             if ((double)nullByteCount / sampleLength > 0.01)
@@ -958,7 +968,7 @@ namespace CSVSplitter.Models
                 return true;
             }
 
-            int cp932HintByteCount = cp932LeadByteCount + cp932KanaByteCount;
+            int cp932HintByteCount = cp932LeadByteCount + cp932TrailByteCount + cp932KanaByteCount;
             return cp932HintByteCount > 0 && (double)(textLikeByteCount + cp932HintByteCount) / sampleLength >= 0.85;
         }
 
