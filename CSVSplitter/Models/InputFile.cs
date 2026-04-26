@@ -237,11 +237,26 @@ namespace CSVSplitter.Models
 
         public void Analyze()
         {
-            if(!File.Exists(this.FilePath))
+            this.IsCsvFile = false;
+            this.IsTextFile = false;
+            this.Encoding = null;
+            this.NewLine = null;
+            this.RawHeader = null;
+            this.Header = new string[0];
+            this.Delimiter = '\0';
+            this.HasBom = false;
+            this.HasDoubleQuote = false;
+
+            if (!File.Exists(this.FilePath))
             {
                 this.IsAnalyzed = false;
-                this.IsTextFile = false;
-                this.Encoding = null;
+                return;
+            }
+
+            var fileInfo = new FileInfo(this.FilePath);
+            if (fileInfo.Length == 0)
+            {
+                this.IsAnalyzed = true;
                 return;
             }
 
@@ -249,7 +264,6 @@ namespace CSVSplitter.Models
             if (this._encoding is null)
             {
                 this.IsAnalyzed = true;
-                this.IsTextFile = false;
                 return;
             }
 
@@ -271,6 +285,12 @@ namespace CSVSplitter.Models
                 // とりあえず、一行目を読み込む
                 var header = reader.ReadLine();
                 this.RawHeader = header;
+                if (header is null)
+                {
+                    this.IsTextFile = false;
+                    this.IsAnalyzed = true;
+                    return;
+                }
 
                 int conmaCount = header.Count(c => c == ',');
                 int tabCount = header.Count(c => c == '\t');
@@ -381,53 +401,141 @@ namespace CSVSplitter.Models
 
         private System.Text.Encoding GetEncoding(string filename)
         {
-            int maxSize = 512 * 1024;
+            const int maxSize = 512 * 1024;
             var file = new System.IO.FileInfo(filename);
-            System.Text.Encoding result = null;
+            var readSize = (int)Math.Min(maxSize, file.Length);
 
-            if (maxSize > file.Length)
+            if (readSize <= 0)
             {
-                using (Hnx8.ReadJEnc.FileReader reader = new Hnx8.ReadJEnc.FileReader(file))
-                {
-                    Hnx8.ReadJEnc.CharCode code = reader.Read(file);
-                    var tmpResult = code.GetEncoding();
-
-                    if (tmpResult != null)
-                    {
-                        result = tmpResult;
-                    }
-
-                }
+                return null;
             }
-            else
+
+            byte[] buffer = new byte[readSize];
+            using (var fs = file.OpenRead())
             {
-                // 512KBまで読み込む
-                byte[] buffer = new byte[maxSize];
-                using (var fs = file.OpenRead())
+                fs.Read(buffer, 0, buffer.Length);
+            }
+
+            if (buffer.Length >= 4)
+            {
+                if (buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0xFE && buffer[3] == 0xFF)
                 {
-                    fs.Read(buffer, 0, buffer.Length);
+                    return new System.Text.UTF32Encoding(true, true);
                 }
-                if (!(buffer is null))
+
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE && buffer[2] == 0x00 && buffer[3] == 0x00)
                 {
-                    string tmpEncResult = null;
-                    const int maxLoop = 30;
-
-                    for (int i = 0; i < maxLoop; i++)
-                    {
-                        byte[] tmpBytes = new byte[buffer.Length - i];
-                        Array.Copy(buffer, i, tmpBytes, 0, buffer.Length - i);
-
-                        Hnx8.ReadJEnc.CharCode code = Hnx8.ReadJEnc.ReadJEnc.JP.GetEncoding(tmpBytes, tmpBytes.Length, out tmpEncResult);
-                        if (tmpEncResult != null)
-                        {
-                            result = code.GetEncoding();
-                            break;
-                        }
-                    }
+                    return new System.Text.UTF32Encoding(false, true);
                 }
             }
 
-            return result;
+            if (buffer.Length >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+            {
+                return new System.Text.UTF8Encoding(true);
+            }
+
+            if (buffer.Length >= 2)
+            {
+                if (buffer[0] == 0xFE && buffer[1] == 0xFF)
+                {
+                    return new System.Text.UnicodeEncoding(true, true);
+                }
+
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE)
+                {
+                    return new System.Text.UnicodeEncoding(false, true);
+                }
+            }
+
+            var allowIncompleteTail = file.Length > readSize;
+            if (IsValidUtf8(buffer, allowIncompleteTail))
+            {
+                return new System.Text.UTF8Encoding(false);
+            }
+
+            return System.Text.Encoding.GetEncoding(932);
+        }
+
+        private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                int expectedLength;
+                if (b >= 0xC2 && b <= 0xDF)
+                {
+                    expectedLength = 2;
+                }
+                else if (b >= 0xE0 && b <= 0xEF)
+                {
+                    expectedLength = 3;
+                }
+                else if (b >= 0xF0 && b <= 0xF4)
+                {
+                    expectedLength = 4;
+                }
+                else
+                {
+                    return false;
+                }
+
+                if (i + expectedLength > buffer.Length)
+                {
+                    return allowIncompleteTail;
+                }
+
+                if ((buffer[i + 1] & 0xC0) != 0x80)
+                {
+                    return false;
+                }
+
+                if (expectedLength >= 3)
+                {
+                    if ((buffer[i + 2] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xE0 && buffer[i + 1] < 0xA0)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xED && buffer[i + 1] > 0x9F)
+                    {
+                        return false;
+                    }
+                }
+
+                if (expectedLength == 4)
+                {
+                    if ((buffer[i + 3] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF0 && buffer[i + 1] < 0x90)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF4 && buffer[i + 1] > 0x8F)
+                    {
+                        return false;
+                    }
+                }
+
+                i += expectedLength;
+            }
+            return true;
         }
 
         private bool CheckBom(byte[] buffer)

@@ -59,15 +59,21 @@ namespace CSVSplitter.Models
                 file.Analyze();
             }
 
-            string topHeader = "";
-            Encoding topEncoding = null;
+            string topHeader = null;
+            int? topEncodingCodePage = null;
             bool hasUniformHeaders = true;
             foreach (var file in this)
             {
-                if (topHeader == "")
+                if (!file.IsCsvFile || file.RawHeader == null || file.Encoding == null)
+                {
+                    hasUniformHeaders = false;
+                    continue;
+                }
+
+                if (topHeader == null)
                 {
                     topHeader = file.RawHeader;
-                    topEncoding = file.Encoding;
+                    topEncodingCodePage = file.Encoding.CodePage;
                 }
                 else
                 {
@@ -76,7 +82,7 @@ namespace CSVSplitter.Models
                         hasUniformHeaders = false;
                         break;
                     }
-                    else if (topEncoding.CodePage != file.Encoding.CodePage)
+                    else if (topEncodingCodePage != file.Encoding.CodePage)
                     {
                         hasUniformHeaders = false;
                         break;
