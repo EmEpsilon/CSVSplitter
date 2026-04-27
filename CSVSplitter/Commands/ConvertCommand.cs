@@ -517,6 +517,15 @@ namespace CSVSplitter.Commands
 
         public string GetOutputFilePath(string baseFileName, string extention, string outputFolder)
         {
+            if (this.outputFiles is null)
+            {
+                this.outputFiles = new List<string>();
+            }
+            if (this.outputFilePathSet is null)
+            {
+                this.outputFilePathSet = new HashSet<string>(this.outputFiles, StringComparer.OrdinalIgnoreCase);
+            }
+
             var result = "";
 
             var invalidChars = Path.GetInvalidFileNameChars();
