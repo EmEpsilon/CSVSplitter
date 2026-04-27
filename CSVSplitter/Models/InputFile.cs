@@ -556,15 +556,31 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            double littleEndianScore = ScoreUtf16WithoutBom(buffer, sampleLength, false);
-            double bigEndianScore = ScoreUtf16WithoutBom(buffer, sampleLength, true);
+            double littleEndianScore = ScoreUtf16WithoutBom(
+                buffer,
+                sampleLength,
+                false,
+                out double littleEndianTextRatio,
+                out double littleEndianSurrogateRatio);
+            double bigEndianScore = ScoreUtf16WithoutBom(
+                buffer,
+                sampleLength,
+                true,
+                out double bigEndianTextRatio,
+                out double bigEndianSurrogateRatio);
             double bestScore = Math.Max(littleEndianScore, bigEndianScore);
+            bool littleEndianIsBest = littleEndianScore >= bigEndianScore;
+            double bestTextCodeUnitRatio = littleEndianIsBest ? littleEndianTextRatio : bigEndianTextRatio;
+            double bestSurrogateRatio = littleEndianIsBest ? littleEndianSurrogateRatio : bigEndianSurrogateRatio;
 
-            // Keep this threshold close to likelyScore so UTF-16 text that is mostly non-ASCII
-            // (LE/BE scores become similar) is not rejected too aggressively.
-            const double strongConfidenceScore = 0.60;
+            // Keep this threshold conservative for ambiguous LE/BE direction cases. We only
+            // bypass it with additional quality checks below to reduce false positives.
+            const double strongConfidenceScore = 0.70;
             const double likelyScore = 0.55;
             const double minDirectionGap = 0.08;
+            const double conditionalConfidenceScore = 0.58;
+            const double highTextCodeUnitRatio = 0.85;
+            const double lowSurrogateRatio = 0.02;
 
             if (bestScore < likelyScore)
             {
@@ -573,16 +589,31 @@ namespace CSVSplitter.Models
 
             if (Math.Abs(littleEndianScore - bigEndianScore) < minDirectionGap && bestScore < strongConfidenceScore)
             {
-                return false;
+                // Motivation: Japanese-dominant UTF-16 CSV can produce very similar LE/BE scores
+                // because ASCII delimiters are sparse. Instead of globally lowering the confidence
+                // threshold (which increases false positives), allow this path only when the
+                // candidate still looks strongly text-like (high text ratio + low surrogate ratio).
+                bool allowAmbiguousDirectionCase = bestScore >= conditionalConfidenceScore
+                    && bestTextCodeUnitRatio >= highTextCodeUnitRatio
+                    && bestSurrogateRatio <= lowSurrogateRatio;
+                if (!allowAmbiguousDirectionCase)
+                {
+                    return false;
+                }
             }
 
-            encoding = littleEndianScore >= bigEndianScore
+            encoding = littleEndianIsBest
                 ? (System.Text.Encoding)new System.Text.UnicodeEncoding(false, false)
                 : new System.Text.UnicodeEncoding(true, false);
             return true;
         }
 
-        private double ScoreUtf16WithoutBom(byte[] buffer, int sampleLength, bool bigEndian)
+        private double ScoreUtf16WithoutBom(
+            byte[] buffer,
+            int sampleLength,
+            bool bigEndian,
+            out double textCodeUnitRatio,
+            out double surrogateRatio)
         {
             int pairCount = sampleLength / 2;
             int nullHighBytes = 0;
@@ -619,8 +650,8 @@ namespace CSVSplitter.Models
 
             double highNullRatio = (double)nullHighBytes / pairCount;
             double lowNullRatio = (double)nullLowBytes / pairCount;
-            double textCodeUnitRatio = (double)likelyTextCodeUnits / pairCount;
-            double surrogateRatio = (double)surrogateCodeUnits / pairCount;
+            textCodeUnitRatio = (double)likelyTextCodeUnits / pairCount;
+            surrogateRatio = (double)surrogateCodeUnits / pairCount;
 
             double nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
 
