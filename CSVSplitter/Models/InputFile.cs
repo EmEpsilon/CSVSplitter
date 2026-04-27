@@ -946,10 +946,14 @@ namespace CSVSplitter.Models
                     }
 
                     hasMultibyte = true;
-                    // 0xA1-0xDF は CP932 では単独の半角カナとして有効なため、
-                    // ここを「強い EUC-JP 署名」として扱うと CP932 の連続カナを
-                    // EUC-JP と誤判定しやすい。強い署名は 0x8F 系などの
-                    // CP932 と衝突しにくい並びでのみ立てる。
+                    // 0xA1-0xDF が先頭の 2 バイト並びは、EUC-JP では JIS X 0208 の
+                    // 妥当な 2 バイト文字を表す。一方 CP932 では同じバイト帯が
+                    // 単独の半角カナとして解釈されるため、EUC-JP テキストが
+                    // CP932 にフォールバックされる退行を防ぐために強い署名とする。
+                    if (b <= 0xDF)
+                    {
+                        hasStrongEucSignature = true;
+                    }
                     i += 2;
                     continue;
                 }
