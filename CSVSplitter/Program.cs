@@ -18,6 +18,7 @@ namespace CSVSplitter
         public static void Main()
         {
             AppDomain.CurrentDomain.AssemblyResolve += OnResolveAssembly;
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
             App.Main();
         }
 

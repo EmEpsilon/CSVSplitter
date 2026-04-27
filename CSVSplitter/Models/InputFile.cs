@@ -14,6 +14,10 @@ namespace CSVSplitter.Models
 {
     public class InputFile : INotifyPropertyChanged
     {
+        private const int TextHeuristicSampleSize = 8192;
+        private const double MaxNullByteRatioForText = 0.01;
+        private const double MaxControlByteRatioForText = 0.02;
+
         public event PropertyChangedEventHandler PropertyChanged;
         private void NotifyPropertyChanged([CallerMemberName] String propertyName = "")
         {
@@ -237,11 +241,26 @@ namespace CSVSplitter.Models
 
         public void Analyze()
         {
-            if(!File.Exists(this.FilePath))
+            this.IsCsvFile = false;
+            this.IsTextFile = false;
+            this.Encoding = null;
+            this.NewLine = null;
+            this.RawHeader = null;
+            this.Header = new string[0];
+            this.Delimiter = '\0';
+            this.HasBom = false;
+            this.HasDoubleQuote = false;
+
+            if (!File.Exists(this.FilePath))
             {
                 this.IsAnalyzed = false;
-                this.IsTextFile = false;
-                this.Encoding = null;
+                return;
+            }
+
+            var fileInfo = new FileInfo(this.FilePath);
+            if (fileInfo.Length == 0)
+            {
+                this.IsAnalyzed = true;
                 return;
             }
 
@@ -249,7 +268,6 @@ namespace CSVSplitter.Models
             if (this._encoding is null)
             {
                 this.IsAnalyzed = true;
-                this.IsTextFile = false;
                 return;
             }
 
@@ -271,6 +289,12 @@ namespace CSVSplitter.Models
                 // とりあえず、一行目を読み込む
                 var header = reader.ReadLine();
                 this.RawHeader = header;
+                if (header is null)
+                {
+                    this.IsTextFile = false;
+                    this.IsAnalyzed = true;
+                    return;
+                }
 
                 int conmaCount = header.Count(c => c == ',');
                 int tabCount = header.Count(c => c == '\t');
@@ -381,53 +405,856 @@ namespace CSVSplitter.Models
 
         private System.Text.Encoding GetEncoding(string filename)
         {
-            int maxSize = 512 * 1024;
+            const int maxSize = 512 * 1024;
             var file = new System.IO.FileInfo(filename);
-            System.Text.Encoding result = null;
+            var readSize = (int)Math.Min(maxSize, file.Length);
 
-            if (maxSize > file.Length)
+            if (readSize <= 0)
             {
-                using (Hnx8.ReadJEnc.FileReader reader = new Hnx8.ReadJEnc.FileReader(file))
+                return null;
+            }
+
+            byte[] buffer = new byte[readSize];
+            using (var fs = file.OpenRead())
+            {
+                fs.Read(buffer, 0, buffer.Length);
+            }
+
+            if (buffer.Length >= 4)
+            {
+                if (buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0xFE && buffer[3] == 0xFF)
                 {
-                    Hnx8.ReadJEnc.CharCode code = reader.Read(file);
-                    var tmpResult = code.GetEncoding();
+                    return new System.Text.UTF32Encoding(true, true);
+                }
 
-                    if (tmpResult != null)
-                    {
-                        result = tmpResult;
-                    }
-
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE && buffer[2] == 0x00 && buffer[3] == 0x00)
+                {
+                    return new System.Text.UTF32Encoding(false, true);
                 }
             }
-            else
+
+            if (buffer.Length >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
             {
-                // 512KBまで読み込む
-                byte[] buffer = new byte[maxSize];
-                using (var fs = file.OpenRead())
+                return new System.Text.UTF8Encoding(true);
+            }
+
+            if (buffer.Length >= 2)
+            {
+                if (buffer[0] == 0xFE && buffer[1] == 0xFF)
                 {
-                    fs.Read(buffer, 0, buffer.Length);
+                    return new System.Text.UnicodeEncoding(true, true);
                 }
-                if (!(buffer is null))
+
+                if (buffer[0] == 0xFF && buffer[1] == 0xFE)
                 {
-                    string tmpEncResult = null;
-                    const int maxLoop = 30;
+                    return new System.Text.UnicodeEncoding(false, true);
+                }
+            }
 
-                    for (int i = 0; i < maxLoop; i++)
+            var allowIncompleteTail = file.Length > readSize;
+            if (IsLikelyIso2022Jp(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding("iso-2022-jp");
+            }
+
+            bool isLikelyTextContent = IsLikelyTextContent(buffer);
+
+            if (IsLikelyUtf8WithTailRetry(file, buffer, allowIncompleteTail, isLikelyTextContent))
+            {
+                return new System.Text.UTF8Encoding(false);
+            }
+
+            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
+            {
+                return utf16Encoding;
+            }
+
+            // このアプリでは日本語 CSV の主要候補である Shift-JIS を優先する。
+            if (isLikelyTextContent && IsValidCp932(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding(932);
+            }
+
+            if (IsValidEucJp(buffer, allowIncompleteTail))
+            {
+                return System.Text.Encoding.GetEncoding("euc-jp");
+            }
+
+            return null;
+        }
+
+        private bool IsLikelyUtf8WithTailRetry(
+            System.IO.FileInfo file,
+            byte[] buffer,
+            bool allowIncompleteTail,
+            bool isLikelyTextContent)
+        {
+            if (IsValidUtf8(buffer, allowIncompleteTail) && IsLikelyUtf8TextContent(buffer, isLikelyTextContent))
+            {
+                return true;
+            }
+
+            // サンプル末尾の途中切れで UTF-8 判定がぶれる場合のみ、少量を追読して再判定する。
+            // 通常ケースでは追加 I/O を発生させず、精度と速度のバランスを保つ。
+            if (!allowIncompleteTail)
+            {
+                return false;
+            }
+
+            const int retryTailBytes = 4;
+            long remaining = Math.Max(0L, file.Length - buffer.Length);
+            int extraBytes = (int)Math.Min(retryTailBytes, remaining);
+            if (extraBytes == 0)
+            {
+                return false;
+            }
+
+            byte[] extended = new byte[buffer.Length + extraBytes];
+            Buffer.BlockCopy(buffer, 0, extended, 0, buffer.Length);
+
+            int actualRead;
+            using (var fs = file.OpenRead())
+            {
+                fs.Position = buffer.Length;
+                actualRead = fs.Read(extended, buffer.Length, extraBytes);
+            }
+
+            if (actualRead <= 0)
+            {
+                return false;
+            }
+
+            if (actualRead < extraBytes)
+            {
+                Array.Resize(ref extended, buffer.Length + actualRead);
+            }
+
+            return IsValidUtf8(extended, false) && IsLikelyUtf8TextContent(extended, isLikelyTextContent);
+        }
+
+        private bool IsLikelyUtf8TextContent(byte[] buffer, bool isLikelyTextContent)
+        {
+            if (isLikelyTextContent)
+            {
+                return true;
+            }
+
+            // IsLikelyTextContent は ASCII/CP932 を重視した判定のため、
+            // UTF-8 多バイト主体のテキスト救済をここで行う。
+            // ただし NUL/制御文字の比率上限は共通化し、バイナリ誤判定は抑止する。
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
+            if (sampleLength == 0)
+            {
+                return false;
+            }
+
+            int nullByteCount = 0;
+            int controlByteCount = 0;
+            int multibyteStartCount = 0;
+
+            for (int i = 0; i < sampleLength; i++)
+            {
+                byte b = buffer[i];
+
+                if (b == 0x00)
+                {
+                    nullByteCount++;
+                }
+
+                if ((b <= 0x08) || b == 0x0B || b == 0x0C || (b >= 0x0E && b <= 0x1F) || b == 0x7F)
+                {
+                    controlByteCount++;
+                }
+
+                if (b >= 0xC2 && b <= 0xF4)
+                {
+                    multibyteStartCount++;
+                }
+            }
+
+            if ((double)nullByteCount / sampleLength > MaxNullByteRatioForText)
+            {
+                return false;
+            }
+
+            if ((double)controlByteCount / sampleLength > MaxControlByteRatioForText)
+            {
+                return false;
+            }
+
+            return multibyteStartCount > 0;
+        }
+
+        private bool TryDetectUtf16WithoutBom(byte[] buffer, out System.Text.Encoding encoding)
+        {
+            encoding = null;
+
+            if (buffer.Length < 4)
+            {
+                return false;
+            }
+
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
+            sampleLength -= sampleLength % 2;
+            if (sampleLength < 4)
+            {
+                return false;
+            }
+
+            double littleEndianScore = ScoreUtf16WithoutBom(
+                buffer,
+                sampleLength,
+                false,
+                out double littleEndianTextRatio,
+                out double littleEndianSurrogateRatio,
+                out double littleEndianNullLaneBias);
+            double bigEndianScore = ScoreUtf16WithoutBom(
+                buffer,
+                sampleLength,
+                true,
+                out double bigEndianTextRatio,
+                out double bigEndianSurrogateRatio,
+                out double bigEndianNullLaneBias);
+            double bestScore = Math.Max(littleEndianScore, bigEndianScore);
+            bool littleEndianIsBest = littleEndianScore >= bigEndianScore;
+            double bestTextCodeUnitRatio = littleEndianIsBest ? littleEndianTextRatio : bigEndianTextRatio;
+            double bestSurrogateRatio = littleEndianIsBest ? littleEndianSurrogateRatio : bigEndianSurrogateRatio;
+            double bestNullLaneBias = littleEndianIsBest ? littleEndianNullLaneBias : bigEndianNullLaneBias;
+
+            // Keep this threshold conservative for ambiguous LE/BE direction cases. We only
+            // bypass it with additional quality checks below to reduce false positives.
+            const double strongConfidenceScore = 0.70;
+            const double likelyScore = 0.55;
+            const double minDirectionGap = 0.08;
+            const double conditionalConfidenceScore = 0.58;
+            const double highTextCodeUnitRatio = 0.85;
+            const double lowSurrogateRatio = 0.02;
+            const double minNullLaneBias = 0.20;
+
+            if (bestScore < likelyScore)
+            {
+                return false;
+            }
+
+            // Require explicit null-lane evidence before accepting UTF-16 without BOM.
+            // Without this gate, ASCII/UTF-8 byte streams can appear "text-like" and score
+            // around 0.60 despite having no UTF-16 byte-lane null pattern.
+            if (bestNullLaneBias < minNullLaneBias)
+            {
+                return false;
+            }
+
+            if (Math.Abs(littleEndianScore - bigEndianScore) < minDirectionGap && bestScore < strongConfidenceScore)
+            {
+                // Motivation: Japanese-dominant UTF-16 CSV can produce very similar LE/BE scores
+                // because ASCII delimiters are sparse. Instead of globally lowering the confidence
+                // threshold (which increases false positives), allow this path only when the
+                // candidate still looks strongly text-like (high text ratio + low surrogate ratio).
+                bool allowAmbiguousDirectionCase = bestScore >= conditionalConfidenceScore
+                    && bestTextCodeUnitRatio >= highTextCodeUnitRatio
+                    && bestSurrogateRatio <= lowSurrogateRatio;
+                if (!allowAmbiguousDirectionCase)
+                {
+                    return false;
+                }
+            }
+
+            encoding = littleEndianIsBest
+                ? (System.Text.Encoding)new System.Text.UnicodeEncoding(false, false)
+                : new System.Text.UnicodeEncoding(true, false);
+            return true;
+        }
+
+        private double ScoreUtf16WithoutBom(
+            byte[] buffer,
+            int sampleLength,
+            bool bigEndian,
+            out double textCodeUnitRatio,
+            out double surrogateRatio,
+            out double nullLaneBias)
+        {
+            int pairCount = sampleLength / 2;
+            int nullHighBytes = 0;
+            int nullLowBytes = 0;
+            int likelyTextCodeUnits = 0;
+            int surrogateCodeUnits = 0;
+
+            for (int i = 0; i < sampleLength; i += 2)
+            {
+                byte high = bigEndian ? buffer[i] : buffer[i + 1];
+                byte low = bigEndian ? buffer[i + 1] : buffer[i];
+                ushort codeUnit = (ushort)((high << 8) | low);
+
+                if (high == 0x00)
+                {
+                    nullHighBytes++;
+                }
+
+                if (low == 0x00)
+                {
+                    nullLowBytes++;
+                }
+
+                if (IsLikelyTextCodeUnit(codeUnit))
+                {
+                    likelyTextCodeUnits++;
+                }
+
+                if (codeUnit >= 0xD800 && codeUnit <= 0xDFFF)
+                {
+                    surrogateCodeUnits++;
+                }
+            }
+
+            double highNullRatio = (double)nullHighBytes / pairCount;
+            double lowNullRatio = (double)nullLowBytes / pairCount;
+            textCodeUnitRatio = (double)likelyTextCodeUnits / pairCount;
+            surrogateRatio = (double)surrogateCodeUnits / pairCount;
+
+            nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
+
+            return (nullLaneBias * 0.40)
+                + (textCodeUnitRatio * 0.35)
+                + ((1.0 - surrogateRatio) * 0.25);
+        }
+
+        private bool IsLikelyTextCodeUnit(ushort value)
+        {
+            // Allow common whitespace used in CSV text.
+            if (value == 0x09 || value == 0x0A || value == 0x0D)
+            {
+                return true;
+            }
+
+            // Reject control blocks that are rarely valid in CSV content.
+            if (value < 0x20 || (value >= 0x7F && value <= 0x9F))
+            {
+                return false;
+            }
+
+            // Treat surrogate code units as risky unless they are paired; this scorer
+            // only checks single code units, so count them as non-text.
+            if (value >= 0xD800 && value <= 0xDFFF)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                int expectedLength;
+                if (b >= 0xC2 && b <= 0xDF)
+                {
+                    expectedLength = 2;
+                }
+                else if (b >= 0xE0 && b <= 0xEF)
+                {
+                    expectedLength = 3;
+                }
+                else if (b >= 0xF0 && b <= 0xF4)
+                {
+                    expectedLength = 4;
+                }
+                else
+                {
+                    return false;
+                }
+
+                if (i + expectedLength > buffer.Length)
+                {
+                    if (!allowIncompleteTail)
                     {
-                        byte[] tmpBytes = new byte[buffer.Length - i];
-                        Array.Copy(buffer, i, tmpBytes, 0, buffer.Length - i);
+                        return false;
+                    }
 
-                        Hnx8.ReadJEnc.CharCode code = Hnx8.ReadJEnc.ReadJEnc.JP.GetEncoding(tmpBytes, tmpBytes.Length, out tmpEncResult);
-                        if (tmpEncResult != null)
+                    int availableLength = buffer.Length - i;
+
+                    // Validate bytes that are already present in the truncated tail.
+                    // This prevents accepting impossible UTF-8 suffixes such as
+                    // a lead byte followed by a non-continuation byte.
+                    if (availableLength >= 2)
+                    {
+                        if ((buffer[i + 1] & 0xC0) != 0x80)
                         {
-                            result = code.GetEncoding();
-                            break;
+                            return false;
+                        }
+
+                        if (b == 0xE0 && buffer[i + 1] < 0xA0)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xED && buffer[i + 1] > 0x9F)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xF0 && buffer[i + 1] < 0x90)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xF4 && buffer[i + 1] > 0x8F)
+                        {
+                            return false;
                         }
                     }
+
+                    if (availableLength >= 3 && (buffer[i + 2] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    return true;
                 }
+
+                if ((buffer[i + 1] & 0xC0) != 0x80)
+                {
+                    return false;
+                }
+
+                if (expectedLength >= 3)
+                {
+                    if ((buffer[i + 2] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xE0 && buffer[i + 1] < 0xA0)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xED && buffer[i + 1] > 0x9F)
+                    {
+                        return false;
+                    }
+                }
+
+                if (expectedLength == 4)
+                {
+                    if ((buffer[i + 3] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF0 && buffer[i + 1] < 0x90)
+                    {
+                        return false;
+                    }
+
+                    if (b == 0xF4 && buffer[i + 1] > 0x8F)
+                    {
+                        return false;
+                    }
+                }
+
+                i += expectedLength;
+            }
+            return true;
+        }
+
+        private bool IsLikelyIso2022Jp(byte[] buffer, bool allowIncompleteTail)
+        {
+            const byte ESC = 0x1B;
+            int escapeSequenceCount = 0;
+            bool hasJisMultibyteDesignation = false;
+            int asciiDesignationCount = 0;
+            bool isInJisMultibyteMode = false;
+            bool hasPendingJisLeadByte = false;
+
+            int i = 0;
+            while (i < buffer.Length)
+            {
+                byte current = buffer[i];
+                if (current == ESC)
+                {
+                    if (hasPendingJisLeadByte)
+                    {
+                        return false;
+                    }
+
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && escapeSequenceCount > 0;
+                    }
+
+                    byte b1 = buffer[i + 1];
+                    bool isKnownSequence;
+                    int consumedLength;
+
+                    if (b1 == 0x24 || b1 == 0x28)
+                    {
+                        if (i + 2 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        byte b2 = buffer[i + 2];
+                        if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
+                        {
+                            isKnownSequence = true;
+                            consumedLength = 3;
+                            hasJisMultibyteDesignation = true;
+                            isInJisMultibyteMode = true;
+                        }
+                        else if (b1 == 0x24 && b2 == 0x28)
+                        {
+                            if (i + 3 >= buffer.Length)
+                            {
+                                return allowIncompleteTail && escapeSequenceCount > 0;
+                            }
+
+                            // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
+                            isKnownSequence = buffer[i + 3] == 0x44;
+                            consumedLength = 4;
+                            if (isKnownSequence)
+                            {
+                                hasJisMultibyteDesignation = true;
+                                isInJisMultibyteMode = true;
+                            }
+                        }
+                        else
+                        {
+                            isKnownSequence = b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49);
+                            consumedLength = 3;
+                            if (isKnownSequence)
+                            {
+                                asciiDesignationCount++;
+                                isInJisMultibyteMode = false;
+                            }
+                        }
+                    }
+                    else if (b1 == 0x26)
+                    {
+                        if (i + 2 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        if (buffer[i + 2] != 0x40)
+                        {
+                            return false;
+                        }
+
+                        if (i + 3 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        // ESC & @ の直後に続く ESC は次のエスケープシーケンスとして解釈する。
+                        isKnownSequence = buffer[i + 3] == ESC;
+                        consumedLength = 3;
+                    }
+                    else
+                    {
+                        isKnownSequence = false;
+                        consumedLength = 0;
+                    }
+
+                    if (!isKnownSequence)
+                    {
+                        return false;
+                    }
+
+                    escapeSequenceCount++;
+                    hasPendingJisLeadByte = false;
+                    i += consumedLength;
+                    continue;
+                }
+
+                if (current >= 0x80)
+                {
+                    return false;
+                }
+
+                bool isAllowedControl = current == 0x09 || current == 0x0A || current == 0x0D;
+                if (isAllowedControl && hasPendingJisLeadByte)
+                {
+                    return false;
+                }
+
+                if (!isAllowedControl && (current < 0x20 || current == 0x7F))
+                {
+                    return false;
+                }
+
+                if (isInJisMultibyteMode && !isAllowedControl)
+                {
+                    if (current < 0x21 || current > 0x7E)
+                    {
+                        return false;
+                    }
+
+                    hasPendingJisLeadByte = !hasPendingJisLeadByte;
+                }
+
+                i++;
             }
 
-            return result;
+            if (hasPendingJisLeadByte)
+            {
+                return allowIncompleteTail && escapeSequenceCount > 0;
+            }
+
+            if (escapeSequenceCount <= 0)
+            {
+                return false;
+            }
+
+            if (hasJisMultibyteDesignation)
+            {
+                return true;
+            }
+
+            // ASCII 系指定 (ESC ( B / ESC ( J / ESC ( I) だけで構成される
+            // ISO-2022-JP ストリームも許容する。
+            // ただし誤検知を抑えるため、ASCII 系指定のみの場合は
+            // 最低 2 回以上の既知エスケープシーケンスを要求する。
+            return asciiDesignationCount >= 2;
+        }
+
+        private bool IsValidEucJp(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            bool hasMultibyte = false;
+            bool hasStrongEucSignature = false;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F)
+                {
+                    i++;
+                    continue;
+                }
+
+                if (b == 0x8E)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte kana = buffer[i + 1];
+                    if (kana < 0xA1 || kana > 0xDF)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    i += 2;
+                    continue;
+                }
+
+                if (b == 0x8F)
+                {
+                    if (i + 2 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    byte b3 = buffer[i + 2];
+                    if (b2 < 0xA1 || b2 > 0xFE || b3 < 0xA1 || b3 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    hasStrongEucSignature = true;
+                    i += 3;
+                    continue;
+                }
+
+                // EUC-JP 2-byte lead bytes are 0xA1-0xFE.
+                if (b >= 0xA1 && b <= 0xFE)
+                {
+                    if (i + 1 >= buffer.Length)
+                    {
+                        return allowIncompleteTail && hasMultibyte && hasStrongEucSignature;
+                    }
+
+                    byte b2 = buffer[i + 1];
+                    if (b2 < 0xA1 || b2 > 0xFE)
+                    {
+                        return false;
+                    }
+
+                    hasMultibyte = true;
+                    // 方針決定メモ:
+                    // - 0xA1-0xDF 先頭の 2 バイトは EUC-JP としては妥当だが、
+                    //   CP932 でも同バイト帯は単独の半角カナ列として妥当に読める。
+                    // - そのためこの領域は「曖昧」とみなし、レビュー合意の基本方針
+                    //   (EUC-JP と CP932 の区別が難しい場合は CP932 を優先) に従って
+                    //   強い EUC-JP 署名にはしない。
+                    // - 強い署名は 0x8F 系など CP932 と衝突しにくい並びのみで立てる。
+                    i += 2;
+                    continue;
+                }
+
+                return false;
+            }
+
+            if (!hasMultibyte)
+            {
+                return false;
+            }
+
+            if (hasStrongEucSignature)
+            {
+                return true;
+            }
+
+            // 0x8E xx / 0xE0-0xEF 系だけで成立する場合は CP932 と衝突しやすいため、
+            // CP932 としても成立する場合は EUC-JP と見なさずフォールバックへ回す。
+            return !IsValidCp932(buffer, allowIncompleteTail);
+        }
+
+        private bool IsValidCp932(byte[] buffer, bool allowIncompleteTail)
+        {
+            int i = 0;
+            int validLength = buffer.Length;
+
+            while (i < buffer.Length)
+            {
+                byte b = buffer[i];
+
+                if (b <= 0x7F || (b >= 0xA1 && b <= 0xDF))
+                {
+                    i++;
+                    continue;
+                }
+
+                bool isLeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                if (!isLeadByte)
+                {
+                    return false;
+                }
+
+                if (i + 1 >= buffer.Length)
+                {
+                    if (!allowIncompleteTail)
+                    {
+                        return false;
+                    }
+
+                    validLength = i;
+                    break;
+                }
+
+                byte trail = buffer[i + 1];
+                bool isTrailByte = (trail >= 0x40 && trail <= 0x7E) || (trail >= 0x80 && trail <= 0xFC);
+                if (!isTrailByte)
+                {
+                    return false;
+                }
+
+                i += 2;
+            }
+
+            try
+            {
+                System.Text.Encoding strictCp932 = System.Text.Encoding.GetEncoding(
+                    932,
+                    System.Text.EncoderFallback.ExceptionFallback,
+                    System.Text.DecoderFallback.ExceptionFallback);
+                strictCp932.GetCharCount(buffer, 0, validLength);
+                return true;
+            }
+            catch (System.Text.DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
+        private bool IsLikelyTextContent(byte[] buffer)
+        {
+            if (buffer.Length == 0)
+            {
+                return false;
+            }
+
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
+            int nullByteCount = 0;
+            int controlByteCount = 0;
+            int textLikeByteCount = 0;
+            int cp932LeadByteCount = 0;
+            int cp932TrailByteCount = 0;
+            int cp932KanaByteCount = 0;
+            bool previousWasCp932LeadByte = false;
+
+            for (int i = 0; i < sampleLength; i++)
+            {
+                byte b = buffer[i];
+                bool isCp932LeadByte = (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC);
+                bool isCp932TrailByte = (b >= 0x40 && b <= 0x7E) || (b >= 0x80 && b <= 0xFC);
+
+                if (b == 0x00)
+                {
+                    nullByteCount++;
+                }
+
+                if ((b <= 0x08) || b == 0x0B || b == 0x0C || (b >= 0x0E && b <= 0x1F) || b == 0x7F)
+                {
+                    controlByteCount++;
+                }
+
+                if (b == 0x09 || b == 0x0A || b == 0x0D || (b >= 0x20 && b <= 0x7E))
+                {
+                    textLikeByteCount++;
+                }
+
+                if (b >= 0xA1 && b <= 0xDF)
+                {
+                    cp932KanaByteCount++;
+                }
+
+                if (isCp932LeadByte)
+                {
+                    cp932LeadByteCount++;
+                }
+
+                if (previousWasCp932LeadByte && isCp932TrailByte)
+                {
+                    cp932TrailByteCount++;
+                }
+
+                previousWasCp932LeadByte = isCp932LeadByte;
+            }
+
+            if ((double)nullByteCount / sampleLength > MaxNullByteRatioForText)
+            {
+                return false;
+            }
+
+            if ((double)controlByteCount / sampleLength > MaxControlByteRatioForText)
+            {
+                return false;
+            }
+
+            double textLikeRatio = (double)textLikeByteCount / sampleLength;
+            if (textLikeRatio >= 0.60)
+            {
+                return true;
+            }
+
+            int cp932HintByteCount = cp932LeadByteCount + cp932TrailByteCount + cp932KanaByteCount;
+            return cp932HintByteCount > 0 && (double)(textLikeByteCount + cp932HintByteCount) / sampleLength >= 0.85;
         }
 
         private bool CheckBom(byte[] buffer)
