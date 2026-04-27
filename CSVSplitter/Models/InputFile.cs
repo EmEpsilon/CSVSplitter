@@ -452,11 +452,6 @@ namespace CSVSplitter.Models
             }
 
             var allowIncompleteTail = file.Length > readSize;
-            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
-            {
-                return utf16Encoding;
-            }
-
             if (IsLikelyIso2022Jp(buffer, allowIncompleteTail))
             {
                 return System.Text.Encoding.GetEncoding("iso-2022-jp");
@@ -474,14 +469,14 @@ namespace CSVSplitter.Models
                 return System.Text.Encoding.GetEncoding("euc-jp");
             }
 
-            if (!isLikelyTextContent)
-            {
-                return null;
-            }
-
-            if (IsValidCp932(buffer, allowIncompleteTail))
+            if (isLikelyTextContent && IsValidCp932(buffer, allowIncompleteTail))
             {
                 return System.Text.Encoding.GetEncoding(932);
+            }
+
+            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
+            {
+                return utf16Encoding;
             }
 
             return null;
@@ -584,7 +579,7 @@ namespace CSVSplitter.Models
             const double conditionalConfidenceScore = 0.58;
             const double highTextCodeUnitRatio = 0.85;
             const double lowSurrogateRatio = 0.02;
-            const double minNullLaneBias = 0.10;
+            const double minNullLaneBias = 0.20;
 
             if (bestScore < likelyScore)
             {
