@@ -741,6 +741,7 @@ namespace CSVSplitter.Commands
             //await this._writer.WriteAsync(data);
             this._counter++;
         }
+
         public async Task WriteFlush()
         {
             if (this._bufferCount > 0)
