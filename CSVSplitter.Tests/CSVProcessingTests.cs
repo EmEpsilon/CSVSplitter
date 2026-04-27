@@ -509,7 +509,20 @@ namespace CSVSplitter.Tests
         private static void SetPrivateField(object instance, string fieldName, object value)
         {
             var field = instance.GetType().GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
-            field.SetValue(instance, value);
+            if (field != null)
+            {
+                field.SetValue(instance, value);
+                return;
+            }
+
+            var property = instance.GetType().GetProperty(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            if (property != null)
+            {
+                property.SetValue(instance, value);
+                return;
+            }
+
+            throw new InvalidOperationException($"Private member '{fieldName}' was not found on {instance.GetType().FullName}.");
         }
 
         private static InputFile Analyze(string filePath)
