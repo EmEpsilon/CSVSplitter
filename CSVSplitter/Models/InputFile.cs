@@ -585,13 +585,14 @@ namespace CSVSplitter.Models
             int pairCount = sampleLength / 2;
             int nullHighBytes = 0;
             int nullLowBytes = 0;
-            int commonTextLowBytes = 0;
-            int replacementRisk = 0;
+            int likelyTextCodeUnits = 0;
+            int surrogateCodeUnits = 0;
 
             for (int i = 0; i < sampleLength; i += 2)
             {
                 byte high = bigEndian ? buffer[i] : buffer[i + 1];
                 byte low = bigEndian ? buffer[i + 1] : buffer[i];
+                ushort codeUnit = (ushort)((high << 8) | low);
 
                 if (high == 0x00)
                 {
@@ -603,48 +604,51 @@ namespace CSVSplitter.Models
                     nullLowBytes++;
                 }
 
-                if (IsCommonTextByte(low))
+                if (IsLikelyTextCodeUnit(codeUnit))
                 {
-                    commonTextLowBytes++;
+                    likelyTextCodeUnits++;
                 }
 
-                if (high >= 0xD8 && high <= 0xDF)
+                if (codeUnit >= 0xD800 && codeUnit <= 0xDFFF)
                 {
-                    replacementRisk++;
+                    surrogateCodeUnits++;
                 }
             }
 
             double highNullRatio = (double)nullHighBytes / pairCount;
             double lowNullRatio = (double)nullLowBytes / pairCount;
-            double lowTextRatio = (double)commonTextLowBytes / pairCount;
-            double replacementRiskRatio = (double)replacementRisk / pairCount;
+            double textCodeUnitRatio = (double)likelyTextCodeUnits / pairCount;
+            double surrogateRatio = (double)surrogateCodeUnits / pairCount;
 
             double nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
 
             return (nullLaneBias * 0.40)
-                + (lowTextRatio * 0.35)
-                + ((1.0 - replacementRiskRatio) * 0.25);
+                + (textCodeUnitRatio * 0.35)
+                + ((1.0 - surrogateRatio) * 0.25);
         }
 
-        private bool IsCommonTextByte(byte value)
+        private bool IsLikelyTextCodeUnit(ushort value)
         {
-            // Treat non-ASCII bytes as potential text bytes as well so BOM-less UTF-16
-            // samples containing non-Latin headers (e.g., Japanese names) are not
-            // unfairly penalized by an ASCII-only low-byte heuristic.
+            // Allow common whitespace used in CSV text.
             if (value == 0x09 || value == 0x0A || value == 0x0D)
             {
                 return true;
             }
 
-            // Standard printable ASCII.
-            if (value >= 0x20 && value <= 0x7E)
+            // Reject control blocks that are rarely valid in CSV content.
+            if (value < 0x20 || (value >= 0x7F && value <= 0x9F))
             {
-                return true;
+                return false;
             }
 
-            // Most bytes >= 0xA0 map to non-control code points in legacy code pages and
-            // are common as UTF-16 low bytes for non-ASCII characters.
-            return value >= 0xA0;
+            // Treat surrogate code units as risky unless they are paired; this scorer
+            // only checks single code units, so count them as non-text.
+            if (value >= 0xD800 && value <= 0xDFFF)
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
