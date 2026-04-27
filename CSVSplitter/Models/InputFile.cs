@@ -738,84 +738,140 @@ namespace CSVSplitter.Models
             const byte ESC = 0x1B;
             int escapeSequenceCount = 0;
             bool hasJisMultibyteDesignation = false;
+            bool isInJisMultibyteMode = false;
+            bool hasPendingJisLeadByte = false;
 
-            for (int i = 0; i < buffer.Length; i++)
+            int i = 0;
+            while (i < buffer.Length)
             {
-                if (buffer[i] != ESC)
+                byte current = buffer[i];
+                if (current == ESC)
                 {
-                    continue;
-                }
+                    if (hasPendingJisLeadByte)
+                    {
+                        return false;
+                    }
 
-                if (i + 1 >= buffer.Length)
-                {
-                    return allowIncompleteTail && escapeSequenceCount > 0;
-                }
-
-                byte b1 = buffer[i + 1];
-                bool isKnownSequence;
-
-                if (b1 == 0x24 || b1 == 0x28)
-                {
-                    if (i + 2 >= buffer.Length)
+                    if (i + 1 >= buffer.Length)
                     {
                         return allowIncompleteTail && escapeSequenceCount > 0;
                     }
 
-                    byte b2 = buffer[i + 2];
-                    if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
+                    byte b1 = buffer[i + 1];
+                    bool isKnownSequence;
+                    int consumedLength;
+
+                    if (b1 == 0x24 || b1 == 0x28)
                     {
-                        isKnownSequence = true;
-                        hasJisMultibyteDesignation = true;
+                        if (i + 2 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        byte b2 = buffer[i + 2];
+                        if (b1 == 0x24 && (b2 == 0x40 || b2 == 0x42))
+                        {
+                            isKnownSequence = true;
+                            consumedLength = 3;
+                            hasJisMultibyteDesignation = true;
+                            isInJisMultibyteMode = true;
+                        }
+                        else if (b1 == 0x24 && b2 == 0x28)
+                        {
+                            if (i + 3 >= buffer.Length)
+                            {
+                                return allowIncompleteTail && escapeSequenceCount > 0;
+                            }
+
+                            // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
+                            isKnownSequence = buffer[i + 3] == 0x44;
+                            consumedLength = 4;
+                            if (isKnownSequence)
+                            {
+                                hasJisMultibyteDesignation = true;
+                                isInJisMultibyteMode = true;
+                            }
+                        }
+                        else
+                        {
+                            isKnownSequence = b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49);
+                            consumedLength = 3;
+                            if (isKnownSequence)
+                            {
+                                isInJisMultibyteMode = false;
+                            }
+                        }
                     }
-                    else if (b1 == 0x24 && b2 == 0x28)
+                    else if (b1 == 0x26)
                     {
+                        if (i + 2 >= buffer.Length)
+                        {
+                            return allowIncompleteTail && escapeSequenceCount > 0;
+                        }
+
+                        if (buffer[i + 2] != 0x40)
+                        {
+                            return false;
+                        }
+
                         if (i + 3 >= buffer.Length)
                         {
                             return allowIncompleteTail && escapeSequenceCount > 0;
                         }
 
-                        // ESC $ ( D (JIS X 0213) も ISO-2022-JP 系列で使用される。
-                        isKnownSequence = buffer[i + 3] == 0x44;
-                        if (isKnownSequence)
-                        {
-                            hasJisMultibyteDesignation = true;
-                        }
+                        // ESC & @ の直後に続く ESC は次のエスケープシーケンスとして解釈する。
+                        isKnownSequence = buffer[i + 3] == ESC;
+                        consumedLength = 3;
                     }
                     else
                     {
-                        isKnownSequence = b1 == 0x28 && (b2 == 0x42 || b2 == 0x4A || b2 == 0x49);
-                    }
-                }
-                else if (b1 == 0x26)
-                {
-                    if (i + 2 >= buffer.Length)
-                    {
-                        return allowIncompleteTail && escapeSequenceCount > 0;
+                        isKnownSequence = false;
+                        consumedLength = 0;
                     }
 
-                    if (buffer[i + 2] != 0x40)
+                    if (!isKnownSequence)
                     {
                         return false;
                     }
 
-                    if (i + 3 >= buffer.Length)
-                    {
-                        return allowIncompleteTail && escapeSequenceCount > 0;
-                    }
-
-                    isKnownSequence = buffer[i + 3] == ESC;
-                }
-                else
-                {
-                    isKnownSequence = false;
+                    escapeSequenceCount++;
+                    hasPendingJisLeadByte = false;
+                    i += consumedLength;
+                    continue;
                 }
 
-                if (!isKnownSequence)
+                if (current >= 0x80)
                 {
                     return false;
                 }
 
-                escapeSequenceCount++;
+                bool isAllowedControl = current == 0x09 || current == 0x0A || current == 0x0D;
+                if (isAllowedControl && hasPendingJisLeadByte)
+                {
+                    return false;
+                }
+
+                if (!isAllowedControl && (current < 0x20 || current == 0x7F))
+                {
+                    return false;
+                }
+
+                if (isInJisMultibyteMode && !isAllowedControl)
+                {
+                    if (current < 0x21 || current > 0x7E)
+                    {
+                        return false;
+                    }
+
+                    hasPendingJisLeadByte = !hasPendingJisLeadByte;
+                }
+
+                i++;
+            }
+
+            if (hasPendingJisLeadByte)
+            {
+                return allowIncompleteTail && escapeSequenceCount > 0;
             }
 
             return escapeSequenceCount > 0 && hasJisMultibyteDesignation;
