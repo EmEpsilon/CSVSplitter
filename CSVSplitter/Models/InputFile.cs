@@ -962,7 +962,7 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            int sampleLength = Math.Min(buffer.Length, 8192);
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
             int nullByteCount = 0;
             int controlByteCount = 0;
             int textLikeByteCount = 0;
