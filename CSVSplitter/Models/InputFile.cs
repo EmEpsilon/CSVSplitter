@@ -628,7 +628,23 @@ namespace CSVSplitter.Models
 
         private bool IsCommonTextByte(byte value)
         {
-            return value == 0x09 || value == 0x0A || value == 0x0D || (value >= 0x20 && value <= 0x7E);
+            // Treat non-ASCII bytes as potential text bytes as well so BOM-less UTF-16
+            // samples containing non-Latin headers (e.g., Japanese names) are not
+            // unfairly penalized by an ASCII-only low-byte heuristic.
+            if (value == 0x09 || value == 0x0A || value == 0x0D)
+            {
+                return true;
+            }
+
+            // Standard printable ASCII.
+            if (value >= 0x20 && value <= 0x7E)
+            {
+                return true;
+            }
+
+            // Most bytes >= 0xA0 map to non-control code points in legacy code pages and
+            // are common as UTF-16 low bytes for non-ASCII characters.
+            return value >= 0xA0;
         }
 
         private bool IsValidUtf8(byte[] buffer, bool allowIncompleteTail)
