@@ -16,19 +16,71 @@ namespace CSVSplitter.Models
         }
         public int Compare(SortCsvRow x, SortCsvRow y)
         {
+            return CompareCore(x.Data, y.Data, x.SortKeyArray, y.SortKeyArray, x.isSettedKey, y.isSettedKey);
+        }
+
+        public SortKey[] BuildSortKeys(IDictionary<string, object> data)
+        {
+            if (this.Options.Count == 0)
+            {
+                return Array.Empty<SortKey>();
+            }
+
+            var sortKeys = new SortKey[this.Options.Count];
+            for (int i = 0; i < this.Options.Count; i++)
+            {
+                var option = this.Options[i];
+                SortKey key = new SortKey();
+                if (option.IsNumeric)
+                {
+                    double num;
+                    if (!double.TryParse(data[option.ColName]?.ToString(), out num))
+                    {
+                        num = 0;
+                    }
+                    key.num = num;
+                }
+                else
+                {
+                    key.obj = data[option.ColName]?.ToString() ?? "";
+                }
+                sortKeys[i] = key;
+            }
+            return sortKeys;
+        }
+
+        public int CompareRecords(
+            IDictionary<string, object> xData,
+            SortKey[] xSortKeys,
+            bool xHasSortKeys,
+            IDictionary<string, object> yData,
+            SortKey[] ySortKeys,
+            bool yHasSortKeys)
+        {
+            return CompareCore(xData, yData, xSortKeys, ySortKeys, xHasSortKeys, yHasSortKeys);
+        }
+
+        private int CompareCore(
+            IDictionary<string, object> xData,
+            IDictionary<string, object> yData,
+            SortKey[] xSortKeys,
+            SortKey[] ySortKeys,
+            bool xHasSortKeys,
+            bool yHasSortKeys)
+        {
             int i = 0;
             foreach(SortOption option in this.Options)
             {
                 int result = 0;
-                if (x.isSettedKey && y.isSettedKey)
+                if (xHasSortKeys && yHasSortKeys)
                 {
                     if (option.IsNumeric)
                     {
-                        result = x.SortKeyArray[i].num.CompareTo(y.SortKeyArray[i].num);
+                        result = xSortKeys[i].num.CompareTo(ySortKeys[i].num);
                     }
                     else
                     {
-                        result = String.Compare(x.SortKeyArray[i].obj.ToString(), y.SortKeyArray[i].obj.ToString(), StringComparison.Ordinal);
+                        result = String.Compare(xSortKeys[i].obj?.ToString(), ySortKeys[i].obj?.ToString(), StringComparison.Ordinal);
                     }
                     if (result != 0)
                     {
@@ -41,11 +93,11 @@ namespace CSVSplitter.Models
                     {
                         double tmp1;
                         double tmp2;
-                        if (!double.TryParse(x.Data[option.ColName].ToString(), out tmp1))
+                        if (!double.TryParse(xData[option.ColName]?.ToString(), out tmp1))
                         {
                             tmp1 = 0;
                         }
-                        if (!double.TryParse(y.Data[option.ColName].ToString(), out tmp2))
+                        if (!double.TryParse(yData[option.ColName]?.ToString(), out tmp2))
                         {
                             tmp2 = 0;
                         }
@@ -53,7 +105,7 @@ namespace CSVSplitter.Models
                     }
                     else
                     {
-                        result = String.Compare(x.Data[option.ColName].ToString(), y.Data[option.ColName].ToString(), StringComparison.Ordinal);
+                        result = String.Compare(xData[option.ColName]?.ToString(), yData[option.ColName]?.ToString(), StringComparison.Ordinal);
                     }
                     if (result != 0)
                     {

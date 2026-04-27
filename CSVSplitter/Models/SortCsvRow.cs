@@ -19,27 +19,7 @@ namespace CSVSplitter.Models
         public bool isSettedKey { get; set; } = false;
         public void SetSortKey(SortComparer comp)
         {
-            SortKeyArray = new SortKey[comp.Options.Count];
-            int i = 0;
-            foreach (SortOption option in comp.Options)
-            {
-                SortKey key = new SortKey();
-                if (option.IsNumeric)
-                {
-                    double num;
-                    if (!double.TryParse(this.Data[option.ColName].ToString(), out num))
-                    {
-                        num = 0;
-                    }
-                    key.num = num;
-                }
-                else
-                {
-                    key.obj = this.Data[option.ColName].ToString();
-                }
-                this.SortKeyArray[i] = key;
-                i++;
-            }
+            SortKeyArray = comp.BuildSortKeys(this.Data);
             this.isSettedKey = true;
         }
     }

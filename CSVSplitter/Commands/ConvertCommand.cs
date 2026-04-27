@@ -42,6 +42,7 @@ namespace CSVSplitter.Commands
         }
 
         private List<string> outputFiles; // 非同期メソッド間で共有するための変数
+        private HashSet<string> outputFilePathSet;
         private Dictionary<string, long> DicCountCsvFile;
         private UpdateProgressStatus updateProgressStatus { get; set; }
         private bool _updateProgressModeAtMerge = true;
@@ -89,6 +90,7 @@ namespace CSVSplitter.Commands
                 }
 
                 this.outputFiles = new List<string>();
+                this.outputFilePathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 this.DicCountCsvFile = new Dictionary<string, long>();
 
                 long totalRecords = 0;
@@ -381,6 +383,7 @@ namespace CSVSplitter.Commands
             foreach (var ccInput in inputList)
             {
                 await ccInput.ReadAsync();
+                ccInput.SetSortKeys(comp);
             }
 
             long countRecords = 0;
@@ -403,13 +406,13 @@ namespace CSVSplitter.Commands
                                 && !comp.isEmpty()
                             )
                         {
-                            var tmp1 = new SortCsvRow();
-                            tmp1.Data = ccInputMin.CurrentRecord;
-                            tmp1.RawData = ccInputMin.RawRecord;
-                            var tmp2 = new SortCsvRow();
-                            tmp2.Data = inputList[i].CurrentRecord;
-                            tmp2.RawData = inputList[i].RawRecord;
-                            if (comp.Compare(tmp1, tmp2) > 0)
+                            if (comp.CompareRecords(
+                                    ccInputMin.CurrentRecord,
+                                    ccInputMin.CurrentSortKeys,
+                                    ccInputMin.IsSortKeySet,
+                                    inputList[i].CurrentRecord,
+                                    inputList[i].CurrentSortKeys,
+                                    inputList[i].IsSortKeySet) > 0)
                             {
                                 ccInputMin = inputList[i];
                                 count++;
@@ -427,6 +430,7 @@ namespace CSVSplitter.Commands
                     }
                     await writer.WriteAsync(row);
                     await ccInputMin.ReadAsync();
+                    ccInputMin.SetSortKeys(comp);
                     countRecords++;
                     if (_updateProgressModeAtMerge)
                     {
@@ -450,7 +454,8 @@ namespace CSVSplitter.Commands
             var baseFileName = Path.GetFileNameWithoutExtension(outputFile);
             var extention = Path.GetExtension(outputFile);
             var outputFolder = Directory.GetParent(outputFile).FullName;
-            var listOutput = new List<CCOutput>();
+            var outputByHeader = new Dictionary<string, CCOutput>(StringComparer.Ordinal);
+            var splitHeaderCount = ccSplitInfo.Headers.Count;
 
             long countRecords = 0;
             using (var reader = new StreamReader(inputFile, config.Encoding))
@@ -465,73 +470,43 @@ namespace CSVSplitter.Commands
                         {
                             row = row + config.NewLine;
                         }
-                        var headerData = new List<string>(ccSplitInfo.Headers.Count);
+                        var headerData = new List<string>(splitHeaderCount);
                         foreach (var val in ccSplitInfo.Headers)
                         {
-                            headerData.Add(data[val].ToString());
+                            headerData.Add(data[val]?.ToString() ?? string.Empty);
                         }
-                        bool isOutput = false;
-                        foreach (var ccOutput in listOutput)
-                        {
-                            var tmpCount = 0;
-                            for (int i = 0; i < ccOutput.HeaderData.Count; i++)
-                            {
-                                if (ccOutput.HeaderData[i] == headerData[i])
-                                {
-                                    tmpCount++;
-                                }
-                            }
-                            if (tmpCount == ccOutput.HeaderData.Count)
-                            {
-                                if(ccOutput.Counter >= this._viewModel.MaxCsvRecords)
-                                {
-                                    await ccOutput.WriteFlush();
-                                    var outputFilePath = GetOutputFilePath(baseFileName + ccOutput.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
-                                    outputFiles.Add(outputFilePath);
-                                    ccOutput.Reset(outputFilePath);
-                                    await ccOutput.WriteAsync(rawHeader + config.NewLine);
-                                }
-                                await ccOutput.WriteAsync(row);
-                                isOutput = true;
-                                countRecords++;
-                                this.updateProgressStatus.IncrementCount(1);
-                                break;
-                            }
-                        }
-                        if(!isOutput)
+                        var headerKey = string.Join("\u001F", headerData);
+                        if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
                         {
                             // Create new output file
                             var ccHeaderData = new CCHeaderData();
                             ccHeaderData.Set(headerData);
 
-                            var outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
+                            var outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder);
                             outputFiles.Add(outputFilePath);
-                            var ccOutput = new CCOutput(outputFilePath, config.Encoding);
+                            ccOutput = new CCOutput(outputFilePath, config.Encoding);
                             ccOutput.HeaderData = ccHeaderData.List;
                             await ccOutput.WriteAsync(rawHeader + config.NewLine);
-                            listOutput.Add(ccOutput);
-
-                            // Write
-                            if (ccOutput.Counter >= this._viewModel.MaxCsvRecords)
-                            {
-                                await ccOutput.WriteFlush();
-                                outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
-                                outputFiles.Add(outputFilePath);
-                                ccOutput.Reset(outputFilePath);
-                                await ccOutput.WriteAsync(rawHeader + config.NewLine);
-                            }
-                            await ccOutput.WriteAsync(row);
-                            isOutput = true;
-                            countRecords++;
-                            this.updateProgressStatus.IncrementCount(1);
-
+                            outputByHeader.Add(headerKey, ccOutput);
                         }
+                        
+                        if (ccOutput.Counter >= this._viewModel.MaxCsvRecords)
+                        {
+                            await ccOutput.WriteFlush();
+                            var outputFilePath = GetOutputFilePath(baseFileName + ccOutput.GetJoinHeaderData(), extention, outputFolder);
+                            outputFiles.Add(outputFilePath);
+                            ccOutput.Reset(outputFilePath);
+                            await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                        }
+                        await ccOutput.WriteAsync(row);
+                        countRecords++;
+                        this.updateProgressStatus.IncrementCount(1);
 
                     }
                 }
             }
 
-            foreach (var ccOutput in listOutput)
+            foreach (var ccOutput in outputByHeader.Values)
             {
                 await ccOutput.WriteFlush();
                 ccOutput.Close();
@@ -540,7 +515,7 @@ namespace CSVSplitter.Commands
             return countRecords;
         }
 
-        public string GetOutputFilePath(string baseFileName, string extention, string outputFolder,ref List<string> outputFiles)
+        public string GetOutputFilePath(string baseFileName, string extention, string outputFolder)
         {
             var result = "";
 
@@ -556,7 +531,7 @@ namespace CSVSplitter.Commands
                 outputFileName = outputFileName.Replace(" ", "_");
                 outputFileName = outputFileName.Replace("　", "_");
                 var outputFilePath = Path.Combine(outputFolder, outputFileName);
-                if (!outputFiles.Contains(outputFilePath))
+                if (this.outputFilePathSet.Add(outputFilePath))
                 {
                     result = outputFilePath;
                     break;
@@ -565,6 +540,15 @@ namespace CSVSplitter.Commands
             }
 
             return result;
+        }
+
+        public string GetOutputFilePath(string baseFileName, string extention, string outputFolder, ref List<string> outputFiles)
+        {
+            if (this.outputFilePathSet is null)
+            {
+                this.outputFilePathSet = new HashSet<string>(outputFiles, StringComparer.OrdinalIgnoreCase);
+            }
+            return GetOutputFilePath(baseFileName, extention, outputFolder);
         }
 
         public void AddCCHeaderData(ref HashSet<CCHeaderData> ccHeaderDataHashSet, List<string> headers)
@@ -771,6 +755,8 @@ namespace CSVSplitter.Commands
         private Encoding _encoding;
         private string _filePath;
         private IDictionary<string, object> _currentRecord;
+        private SortKey[] _currentSortKeys;
+        private bool _isSortKeySet;
         private string _rawRecord;
         public IDictionary<string, object> CurrentRecord
         {
@@ -784,6 +770,20 @@ namespace CSVSplitter.Commands
             get
             {
                 return this._rawRecord;
+            }
+        }
+        public SortKey[] CurrentSortKeys
+        {
+            get
+            {
+                return this._currentSortKeys;
+            }
+        }
+        public bool IsSortKeySet
+        {
+            get
+            {
+                return this._isSortKeySet;
             }
         }
         public string FilePath
@@ -841,14 +841,30 @@ namespace CSVSplitter.Commands
             {
                 this._currentRecord = this._csvReader.GetRecord<dynamic>() as IDictionary<string, object>;
                 this._rawRecord = this._csvReader.Context.Parser.RawRecord;
+                this._currentSortKeys = null;
+                this._isSortKeySet = false;
                 this._counter++;
             }
             else
             {
                 this._currentRecord = null;
                 this._rawRecord = null;
+                this._currentSortKeys = null;
+                this._isSortKeySet = false;
                 Close();
             }
+        }
+
+        public void SetSortKeys(SortComparer comparer)
+        {
+            if (comparer is null || comparer.isEmpty() || this._currentRecord is null)
+            {
+                this._currentSortKeys = null;
+                this._isSortKeySet = false;
+                return;
+            }
+            this._currentSortKeys = comparer.BuildSortKeys(this._currentRecord);
+            this._isSortKeySet = true;
         }
     }
 
