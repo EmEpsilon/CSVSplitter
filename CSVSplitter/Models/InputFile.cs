@@ -725,7 +725,50 @@ namespace CSVSplitter.Models
 
                 if (i + expectedLength > buffer.Length)
                 {
-                    return allowIncompleteTail;
+                    if (!allowIncompleteTail)
+                    {
+                        return false;
+                    }
+
+                    int availableLength = buffer.Length - i;
+
+                    // Validate bytes that are already present in the truncated tail.
+                    // This prevents accepting impossible UTF-8 suffixes such as
+                    // a lead byte followed by a non-continuation byte.
+                    if (availableLength >= 2)
+                    {
+                        if ((buffer[i + 1] & 0xC0) != 0x80)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xE0 && buffer[i + 1] < 0xA0)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xED && buffer[i + 1] > 0x9F)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xF0 && buffer[i + 1] < 0x90)
+                        {
+                            return false;
+                        }
+
+                        if (b == 0xF4 && buffer[i + 1] > 0x8F)
+                        {
+                            return false;
+                        }
+                    }
+
+                    if (availableLength >= 3 && (buffer[i + 2] & 0xC0) != 0x80)
+                    {
+                        return false;
+                    }
+
+                    return true;
                 }
 
                 if ((buffer[i + 1] & 0xC0) != 0x80)
