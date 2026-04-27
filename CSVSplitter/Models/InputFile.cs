@@ -14,6 +14,10 @@ namespace CSVSplitter.Models
 {
     public class InputFile : INotifyPropertyChanged
     {
+        private const int TextHeuristicSampleSize = 8192;
+        private const double MaxNullByteRatioForText = 0.01;
+        private const double MaxControlByteRatioForText = 0.02;
+
         public event PropertyChangedEventHandler PropertyChanged;
         private void NotifyPropertyChanged([CallerMemberName] String propertyName = "")
         {
@@ -458,7 +462,9 @@ namespace CSVSplitter.Models
                 return System.Text.Encoding.GetEncoding("iso-2022-jp");
             }
 
-            if (IsValidUtf8(buffer, allowIncompleteTail))
+            bool isLikelyTextContent = IsLikelyTextContent(buffer);
+
+            if (IsValidUtf8(buffer, allowIncompleteTail) && IsLikelyUtf8TextContent(buffer, isLikelyTextContent))
             {
                 return new System.Text.UTF8Encoding(false);
             }
@@ -468,7 +474,7 @@ namespace CSVSplitter.Models
                 return System.Text.Encoding.GetEncoding("euc-jp");
             }
 
-            if (!IsLikelyTextContent(buffer))
+            if (!isLikelyTextContent)
             {
                 return null;
             }
@@ -481,6 +487,59 @@ namespace CSVSplitter.Models
             return null;
         }
 
+        private bool IsLikelyUtf8TextContent(byte[] buffer, bool isLikelyTextContent)
+        {
+            if (isLikelyTextContent)
+            {
+                return true;
+            }
+
+            // IsLikelyTextContent は ASCII/CP932 を重視した判定のため、
+            // UTF-8 多バイト主体のテキスト救済をここで行う。
+            // ただし NUL/制御文字の比率上限は共通化し、バイナリ誤判定は抑止する。
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
+            if (sampleLength == 0)
+            {
+                return false;
+            }
+
+            int nullByteCount = 0;
+            int controlByteCount = 0;
+            int multibyteStartCount = 0;
+
+            for (int i = 0; i < sampleLength; i++)
+            {
+                byte b = buffer[i];
+
+                if (b == 0x00)
+                {
+                    nullByteCount++;
+                }
+
+                if ((b <= 0x08) || b == 0x0B || b == 0x0C || (b >= 0x0E && b <= 0x1F) || b == 0x7F)
+                {
+                    controlByteCount++;
+                }
+
+                if (b >= 0xC2 && b <= 0xF4)
+                {
+                    multibyteStartCount++;
+                }
+            }
+
+            if ((double)nullByteCount / sampleLength > MaxNullByteRatioForText)
+            {
+                return false;
+            }
+
+            if ((double)controlByteCount / sampleLength > MaxControlByteRatioForText)
+            {
+                return false;
+            }
+
+            return multibyteStartCount > 0;
+        }
+
         private bool TryDetectUtf16WithoutBom(byte[] buffer, out System.Text.Encoding encoding)
         {
             encoding = null;
@@ -490,7 +549,7 @@ namespace CSVSplitter.Models
                 return false;
             }
 
-            int sampleLength = Math.Min(buffer.Length, 8192);
+            int sampleLength = Math.Min(buffer.Length, TextHeuristicSampleSize);
             sampleLength -= sampleLength % 2;
             if (sampleLength < 4)
             {
@@ -951,12 +1010,12 @@ namespace CSVSplitter.Models
                 previousWasCp932LeadByte = isCp932LeadByte;
             }
 
-            if ((double)nullByteCount / sampleLength > 0.01)
+            if ((double)nullByteCount / sampleLength > MaxNullByteRatioForText)
             {
                 return false;
             }
 
-            if ((double)controlByteCount / sampleLength > 0.02)
+            if ((double)controlByteCount / sampleLength > MaxControlByteRatioForText)
             {
                 return false;
             }
