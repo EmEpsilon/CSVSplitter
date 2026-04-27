@@ -561,17 +561,20 @@ namespace CSVSplitter.Models
                 sampleLength,
                 false,
                 out double littleEndianTextRatio,
-                out double littleEndianSurrogateRatio);
+                out double littleEndianSurrogateRatio,
+                out double littleEndianNullLaneBias);
             double bigEndianScore = ScoreUtf16WithoutBom(
                 buffer,
                 sampleLength,
                 true,
                 out double bigEndianTextRatio,
-                out double bigEndianSurrogateRatio);
+                out double bigEndianSurrogateRatio,
+                out double bigEndianNullLaneBias);
             double bestScore = Math.Max(littleEndianScore, bigEndianScore);
             bool littleEndianIsBest = littleEndianScore >= bigEndianScore;
             double bestTextCodeUnitRatio = littleEndianIsBest ? littleEndianTextRatio : bigEndianTextRatio;
             double bestSurrogateRatio = littleEndianIsBest ? littleEndianSurrogateRatio : bigEndianSurrogateRatio;
+            double bestNullLaneBias = littleEndianIsBest ? littleEndianNullLaneBias : bigEndianNullLaneBias;
 
             // Keep this threshold conservative for ambiguous LE/BE direction cases. We only
             // bypass it with additional quality checks below to reduce false positives.
@@ -581,8 +584,17 @@ namespace CSVSplitter.Models
             const double conditionalConfidenceScore = 0.58;
             const double highTextCodeUnitRatio = 0.85;
             const double lowSurrogateRatio = 0.02;
+            const double minNullLaneBias = 0.10;
 
             if (bestScore < likelyScore)
+            {
+                return false;
+            }
+
+            // Require explicit null-lane evidence before accepting UTF-16 without BOM.
+            // Without this gate, ASCII/UTF-8 byte streams can appear "text-like" and score
+            // around 0.60 despite having no UTF-16 byte-lane null pattern.
+            if (bestNullLaneBias < minNullLaneBias)
             {
                 return false;
             }
@@ -613,7 +625,8 @@ namespace CSVSplitter.Models
             int sampleLength,
             bool bigEndian,
             out double textCodeUnitRatio,
-            out double surrogateRatio)
+            out double surrogateRatio,
+            out double nullLaneBias)
         {
             int pairCount = sampleLength / 2;
             int nullHighBytes = 0;
@@ -653,7 +666,7 @@ namespace CSVSplitter.Models
             textCodeUnitRatio = (double)likelyTextCodeUnits / pairCount;
             surrogateRatio = (double)surrogateCodeUnits / pairCount;
 
-            double nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
+            nullLaneBias = Math.Max(0.0, highNullRatio - lowNullRatio);
 
             return (nullLaneBias * 0.40)
                 + (textCodeUnitRatio * 0.35)
