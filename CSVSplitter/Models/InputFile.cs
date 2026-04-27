@@ -502,8 +502,8 @@ namespace CSVSplitter.Models
             }
 
             const int retryTailBytes = 4;
-            int remaining = (int)Math.Max(0, file.Length - buffer.Length);
-            int extraBytes = Math.Min(retryTailBytes, remaining);
+            long remaining = Math.Max(0L, file.Length - buffer.Length);
+            int extraBytes = (int)Math.Min(retryTailBytes, remaining);
             if (extraBytes == 0)
             {
                 return false;
