@@ -133,8 +133,10 @@ namespace CSVSplitter.Tests
             var groupAFiles = Directory.GetFiles(env.Root, "integrated_A_*.csv").OrderBy(f => f).ToList();
             Assert.Equal(3, groupAFiles.Count);
 
-            var firstGroupA = ReadAllLines(groupAFiles[0], file1.Encoding).Skip(1).ToArray();
-            Assert.Equal(new[] { "A,1,10", "A,2,20" }, firstGroupA);
+            var groupARecords = groupAFiles
+                .SelectMany(path => ReadAllLines(path, file1.Encoding).Skip(1))
+                .ToArray();
+            Assert.Equal(new[] { "A,1,10", "A,2,20", "A,3,30" }, groupARecords);
         }
 
         [Fact]
