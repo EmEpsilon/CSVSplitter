@@ -459,7 +459,7 @@ namespace CSVSplitter.Models
 
             bool isLikelyTextContent = IsLikelyTextContent(buffer);
 
-            if (IsValidUtf8(buffer, allowIncompleteTail) && IsLikelyUtf8TextContent(buffer, isLikelyTextContent))
+            if (IsLikelyUtf8WithTailRetry(file, buffer, allowIncompleteTail, isLikelyTextContent))
             {
                 return new System.Text.UTF8Encoding(false);
             }
@@ -481,6 +481,55 @@ namespace CSVSplitter.Models
             }
 
             return null;
+        }
+
+        private bool IsLikelyUtf8WithTailRetry(
+            System.IO.FileInfo file,
+            byte[] buffer,
+            bool allowIncompleteTail,
+            bool isLikelyTextContent)
+        {
+            if (IsValidUtf8(buffer, allowIncompleteTail) && IsLikelyUtf8TextContent(buffer, isLikelyTextContent))
+            {
+                return true;
+            }
+
+            // サンプル末尾の途中切れで UTF-8 判定がぶれる場合のみ、少量を追読して再判定する。
+            // 通常ケースでは追加 I/O を発生させず、精度と速度のバランスを保つ。
+            if (!allowIncompleteTail)
+            {
+                return false;
+            }
+
+            const int retryTailBytes = 4;
+            int remaining = (int)Math.Max(0, file.Length - buffer.Length);
+            int extraBytes = Math.Min(retryTailBytes, remaining);
+            if (extraBytes == 0)
+            {
+                return false;
+            }
+
+            byte[] extended = new byte[buffer.Length + extraBytes];
+            Buffer.BlockCopy(buffer, 0, extended, 0, buffer.Length);
+
+            int actualRead;
+            using (var fs = file.OpenRead())
+            {
+                fs.Position = buffer.Length;
+                actualRead = fs.Read(extended, buffer.Length, extraBytes);
+            }
+
+            if (actualRead <= 0)
+            {
+                return false;
+            }
+
+            if (actualRead < extraBytes)
+            {
+                Array.Resize(ref extended, buffer.Length + actualRead);
+            }
+
+            return IsValidUtf8(extended, false) && IsLikelyUtf8TextContent(extended, isLikelyTextContent);
         }
 
         private bool IsLikelyUtf8TextContent(byte[] buffer, bool isLikelyTextContent)
