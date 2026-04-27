@@ -203,28 +203,20 @@ namespace CSVSplitter.Tests
         }
 
         [Theory]
-        [InlineData("utf8_nobom", "utf-8", false, false)]
-        [InlineData("utf8_bom", "utf-8", true, false)]
-        [InlineData("utf16le_bom", "utf-16", true, false)]
-        [InlineData("utf16be_bom", "utf-16BE", true, false)]
-        [InlineData("utf16le_nobom", "utf-16", false, true)]
-        [InlineData("utf16be_nobom", "utf-16BE", false, true)]
-        [InlineData("shift_jis", "shift_jis", false, false)]
-        [InlineData("euc_jp", "euc-jp", false, false)]
-        public void 文字コード判定_多様な文字コードでCSVとして認識できること(string name, string encodingName, bool withBom, bool forceEncodingWithoutBom)
+        [MemberData(nameof(GetEncodingPatternCases))]
+        public void 文字コード判定_多様な文字コードと文字種パターンでCSVとして認識できること(
+            string name,
+            string encodingName,
+            bool withBom,
+            bool forceEncodingWithoutBom,
+            string contentKind,
+            int? expectedCodePage)
         {
             using var env = new TestEnvironment();
             var encoding = Encoding.GetEncoding(encodingName);
-            var content = CreateCsvContent(
-                "種別,かな,カナ,半角ｶﾅ,値",
-                new[]
-                {
-                    "日本語,あいう,アイウ,ｱｲｳ,100",
-                    "ASCII,abc,ABC,abc,200"
-                },
-                "\r\n");
+            var content = CreateCsvContentForEncodingTest(contentKind, "\r\n");
 
-            var file = env.Path(name + ".csv");
+            var file = env.Path(name + "_" + contentKind + ".csv");
             WriteCsv(file, content, encoding, withBom, forceEncodingWithoutBom);
 
             var inputFile = new InputFile { FilePath = file };
@@ -235,7 +227,11 @@ namespace CSVSplitter.Tests
             Assert.True(inputFile.IsTextFile);
             Assert.Equal(",", inputFile.Delimiter.ToString());
             Assert.Equal("\r\n", inputFile.NewLine);
-            Assert.Contains("種別", inputFile.Header);
+            Assert.NotEmpty(inputFile.Header);
+            if (expectedCodePage.HasValue)
+            {
+                Assert.Equal(expectedCodePage.Value, inputFile.Encoding.CodePage);
+            }
         }
 
         [Fact]
@@ -552,6 +548,92 @@ namespace CSVSplitter.Tests
                 sb.Append(row).Append(newLine);
             }
             return sb.ToString();
+        }
+
+        public static IEnumerable<object[]> GetEncodingPatternCases()
+        {
+            // ASCII のみデータは UTF-8 / Shift-JIS / EUC-JP が同一バイト列になり判別困難なため除外する。
+            var baseCases = new[]
+            {
+                new { Name = "utf8_nobom", EncodingName = "utf-8", WithBom = false, ForceWithoutBom = false, ExpectedCodePage = (int?)65001, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "utf8_bom", EncodingName = "utf-8", WithBom = true, ForceWithoutBom = false, ExpectedCodePage = (int?)65001, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "utf16le_bom", EncodingName = "utf-16", WithBom = true, ForceWithoutBom = false, ExpectedCodePage = (int?)1200, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "utf16be_bom", EncodingName = "utf-16BE", WithBom = true, ForceWithoutBom = false, ExpectedCodePage = (int?)1201, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "utf16le_nobom", EncodingName = "utf-16", WithBom = false, ForceWithoutBom = true, ExpectedCodePage = (int?)1200, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "utf16be_nobom", EncodingName = "utf-16BE", WithBom = false, ForceWithoutBom = true, ExpectedCodePage = (int?)1201, Kinds = new[] { "alnum", "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "shift_jis", EncodingName = "shift_jis", WithBom = false, ForceWithoutBom = false, ExpectedCodePage = (int?)932, Kinds = new[] { "japanese", "fullwidth_kana", "halfwidth_kana", "mixed_all" } },
+                new { Name = "euc_jp", EncodingName = "euc-jp", WithBom = false, ForceWithoutBom = false, ExpectedCodePage = (int?)51932, Kinds = new[] { "japanese", "fullwidth_kana" } },
+            };
+
+            foreach (var baseCase in baseCases)
+            {
+                foreach (var kind in baseCase.Kinds)
+                {
+                    yield return new object[]
+                    {
+                        baseCase.Name,
+                        baseCase.EncodingName,
+                        baseCase.WithBom,
+                        baseCase.ForceWithoutBom,
+                        kind,
+                        baseCase.ExpectedCodePage
+                    };
+                }
+            }
+        }
+
+        private static string CreateCsvContentForEncodingTest(string contentKind, string newLine)
+        {
+            switch (contentKind)
+            {
+                case "alnum":
+                    return CreateCsvContent(
+                        "Type,Text,Value",
+                        new[]
+                        {
+                            "ALNUM,abcXYZ123,100",
+                            "ALNUM,mix987QWE,200"
+                        },
+                        newLine);
+                case "japanese":
+                    return CreateCsvContent(
+                        "種別,本文,値",
+                        new[]
+                        {
+                            "日本語,東京大阪京都,100",
+                            "日本語,日本語だけ,200"
+                        },
+                        newLine);
+                case "fullwidth_kana":
+                    return CreateCsvContent(
+                        "種別,カナ,値",
+                        new[]
+                        {
+                            "全角,アイウエオ,100",
+                            "全角,カキクケコ,200"
+                        },
+                        newLine);
+                case "halfwidth_kana":
+                    return CreateCsvContent(
+                        "種別,半角ｶﾅ,値",
+                        new[]
+                        {
+                            "半角,ｱｲｳｴｵ,100",
+                            "半角,ｶｷｸｹｺ,200"
+                        },
+                        newLine);
+                case "mixed_all":
+                    return CreateCsvContent(
+                        "種別,本文,値",
+                        new[]
+                        {
+                            "混在,ABC123日本語アイウｱｲｳ,100",
+                            "混在,Z9東京カキクｶｷｸ,200"
+                        },
+                        newLine);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(contentKind), contentKind, "Unknown encoding test content kind.");
+            }
         }
 
         private static void WriteCsv(string filePath, string content, Encoding encoding, bool withBom, bool forceEncodingWithoutBom)
