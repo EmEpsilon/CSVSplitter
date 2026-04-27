@@ -464,19 +464,20 @@ namespace CSVSplitter.Models
                 return new System.Text.UTF8Encoding(false);
             }
 
-            if (IsValidEucJp(buffer, allowIncompleteTail))
+            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
             {
-                return System.Text.Encoding.GetEncoding("euc-jp");
+                return utf16Encoding;
             }
 
+            // このアプリでは日本語 CSV の主要候補である Shift-JIS を優先する。
             if (isLikelyTextContent && IsValidCp932(buffer, allowIncompleteTail))
             {
                 return System.Text.Encoding.GetEncoding(932);
             }
 
-            if (TryDetectUtf16WithoutBom(buffer, out var utf16Encoding))
+            if (IsValidEucJp(buffer, allowIncompleteTail))
             {
-                return utf16Encoding;
+                return System.Text.Encoding.GetEncoding("euc-jp");
             }
 
             return null;
