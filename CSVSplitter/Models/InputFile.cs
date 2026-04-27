@@ -779,6 +779,7 @@ namespace CSVSplitter.Models
             const byte ESC = 0x1B;
             int escapeSequenceCount = 0;
             bool hasJisMultibyteDesignation = false;
+            int asciiDesignationCount = 0;
             bool isInJisMultibyteMode = false;
             bool hasPendingJisLeadByte = false;
 
@@ -839,6 +840,7 @@ namespace CSVSplitter.Models
                             consumedLength = 3;
                             if (isKnownSequence)
                             {
+                                asciiDesignationCount++;
                                 isInJisMultibyteMode = false;
                             }
                         }
@@ -915,7 +917,21 @@ namespace CSVSplitter.Models
                 return allowIncompleteTail && escapeSequenceCount > 0;
             }
 
-            return escapeSequenceCount > 0 && hasJisMultibyteDesignation;
+            if (escapeSequenceCount <= 0)
+            {
+                return false;
+            }
+
+            if (hasJisMultibyteDesignation)
+            {
+                return true;
+            }
+
+            // ASCII 系指定 (ESC ( B / ESC ( J / ESC ( I) だけで構成される
+            // ISO-2022-JP ストリームも許容する。
+            // ただし誤検知を抑えるため、ASCII 系指定のみの場合は
+            // 最低 2 回以上の既知エスケープシーケンスを要求する。
+            return asciiDesignationCount >= 2;
         }
 
         private bool IsValidEucJp(byte[] buffer, bool allowIncompleteTail)
