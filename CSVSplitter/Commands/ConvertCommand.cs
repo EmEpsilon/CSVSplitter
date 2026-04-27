@@ -489,7 +489,7 @@ namespace CSVSplitter.Commands
                                     var outputFilePath = GetOutputFilePath(baseFileName + ccOutput.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
                                     outputFiles.Add(outputFilePath);
                                     ccOutput.Reset(outputFilePath);
-                                    await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                                    await ccOutput.WriteHeaderAsync(rawHeader + config.NewLine);
                                 }
                                 await ccOutput.WriteAsync(row);
                                 isOutput = true;
@@ -508,7 +508,7 @@ namespace CSVSplitter.Commands
                             outputFiles.Add(outputFilePath);
                             var ccOutput = new CCOutput(outputFilePath, config.Encoding);
                             ccOutput.HeaderData = ccHeaderData.List;
-                            await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                            await ccOutput.WriteHeaderAsync(rawHeader + config.NewLine);
                             listOutput.Add(ccOutput);
 
                             // Write
@@ -518,7 +518,7 @@ namespace CSVSplitter.Commands
                                 outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder, ref this.outputFiles);
                                 outputFiles.Add(outputFilePath);
                                 ccOutput.Reset(outputFilePath);
-                                await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                                await ccOutput.WriteHeaderAsync(rawHeader + config.NewLine);
                             }
                             await ccOutput.WriteAsync(row);
                             isOutput = true;
@@ -740,6 +740,19 @@ namespace CSVSplitter.Commands
             }
             //await this._writer.WriteAsync(data);
             this._counter++;
+        }
+
+        // ヘッダー行は分割上限のカウント対象外にする
+        public async Task WriteHeaderAsync(string data)
+        {
+            this._buffer.Append(data);
+            this._bufferCount++;
+            if (this._bufferCount >= Global.Const.WRITE_BUFFER_SIZE)
+            {
+                await this._writer.WriteAsync(this._buffer.ToString());
+                this._buffer.Clear();
+                this._bufferCount = 0;
+            }
         }
         public async Task WriteFlush()
         {
