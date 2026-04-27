@@ -946,12 +946,10 @@ namespace CSVSplitter.Models
                     }
 
                     hasMultibyte = true;
-                    if (b <= 0xDF)
-                    {
-                        // CP932 では 0xA1-0xDF は単独の半角カナ領域のため、
-                        // この帯域を先頭にした 2 バイト並びは EUC-JP の有力な手掛かりになる。
-                        hasStrongEucSignature = true;
-                    }
+                    // 0xA1-0xDF は CP932 では単独の半角カナとして有効なため、
+                    // ここを「強い EUC-JP 署名」として扱うと CP932 の連続カナを
+                    // EUC-JP と誤判定しやすい。強い署名は 0x8F 系などの
+                    // CP932 と衝突しにくい並びでのみ立てる。
                     i += 2;
                     continue;
                 }
