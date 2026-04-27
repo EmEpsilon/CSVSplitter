@@ -560,7 +560,9 @@ namespace CSVSplitter.Models
             double bigEndianScore = ScoreUtf16WithoutBom(buffer, sampleLength, true);
             double bestScore = Math.Max(littleEndianScore, bigEndianScore);
 
-            const double strongConfidenceScore = 0.70;
+            // Keep this threshold close to likelyScore so UTF-16 text that is mostly non-ASCII
+            // (LE/BE scores become similar) is not rejected too aggressively.
+            const double strongConfidenceScore = 0.60;
             const double likelyScore = 0.55;
             const double minDirectionGap = 0.08;
 
