@@ -556,42 +556,46 @@ namespace CSVSplitter.Tests
 
         private static void WriteCsv(string filePath, string content, Encoding encoding, bool withBom, bool forceEncodingWithoutBom)
         {
-            byte[] bytes;
+            Encoding payloadEncoding;
             if (forceEncodingWithoutBom && (encoding.CodePage == 1200 || encoding.CodePage == 1201))
             {
                 if (encoding.CodePage == 1200)
                 {
-                    bytes = new UnicodeEncoding(false, false).GetBytes(content);
+                    payloadEncoding = new UnicodeEncoding(false, false);
                 }
                 else
                 {
-                    bytes = new UnicodeEncoding(true, false).GetBytes(content);
+                    payloadEncoding = new UnicodeEncoding(true, false);
                 }
             }
             else if (encoding.CodePage == 65001)
             {
-                bytes = new UTF8Encoding(withBom).GetBytes(content);
+                payloadEncoding = new UTF8Encoding(false);
             }
             else if (encoding.CodePage == 1200)
             {
-                bytes = new UnicodeEncoding(false, withBom).GetBytes(content);
+                payloadEncoding = new UnicodeEncoding(false, false);
             }
             else if (encoding.CodePage == 1201)
             {
-                bytes = new UnicodeEncoding(true, withBom).GetBytes(content);
+                payloadEncoding = new UnicodeEncoding(true, false);
             }
             else
             {
-                bytes = encoding.GetBytes(content);
+                payloadEncoding = encoding;
             }
 
-            if (withBom && encoding.CodePage != 65001 && encoding.CodePage != 1200 && encoding.CodePage != 1201)
+            var payloadBytes = payloadEncoding.GetBytes(content);
+            if (withBom && !forceEncodingWithoutBom)
             {
                 var preamble = encoding.GetPreamble();
-                bytes = preamble.Concat(bytes).ToArray();
+                if (preamble.Length > 0)
+                {
+                    payloadBytes = preamble.Concat(payloadBytes).ToArray();
+                }
             }
 
-            File.WriteAllBytes(filePath, bytes);
+            File.WriteAllBytes(filePath, payloadBytes);
         }
 
         private sealed class TestEnvironment : IDisposable
