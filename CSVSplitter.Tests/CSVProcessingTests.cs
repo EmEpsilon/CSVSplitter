@@ -391,9 +391,12 @@ namespace CSVSplitter.Tests
         {
             using var env = new TestEnvironment();
             var files = new InputFiles();
-            files.Add(env.CreateCsv("u8.csv", "A,B", new[] { "1,2" }, new UTF8Encoding(false)));
-            files.Add(env.CreateCsv("sjis.csv", "A,B", new[] { "3,4" }, Encoding.GetEncoding(932)));
+            files.Add(env.CreateCsv("u8.csv", "A,B", new[] { "あ,2" }, new UTF8Encoding(false)));
+            files.Add(env.CreateCsv("sjis.csv", "A,B", new[] { "①,2" }, Encoding.GetEncoding(932)));
             files.Analyze();
+
+            Assert.Equal(65001, files[0].Encoding.CodePage);
+            Assert.Equal(932, files[1].Encoding.CodePage);
             Assert.False(files.HasUniformHeaders);
         }
 
