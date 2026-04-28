@@ -44,6 +44,8 @@ namespace CSVSplitter.Commands
         private List<string> outputFiles; // 非同期メソッド間で共有するための変数
         private HashSet<string> outputFilePathSet;
         private Dictionary<string, long> DicCountCsvFile;
+        private Dictionary<string, long> DicEstimatedCsvFile;
+        private HashSet<string> ReconciledFiles;
         private UpdateProgressStatus updateProgressStatus { get; set; }
         private bool _updateProgressModeAtMerge = true;
 
@@ -92,11 +94,15 @@ namespace CSVSplitter.Commands
                 this.outputFiles = new List<string>();
                 this.outputFilePathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 this.DicCountCsvFile = new Dictionary<string, long>();
+                this.DicEstimatedCsvFile = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+                this.ReconciledFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 long totalRecords = 0;
                 foreach (var file in this._viewModel.InputFiles)
                 {
-                    totalRecords += await CountCsvFileAsync(file.FilePath, file.GetCsvConfig());
+                    var estimated = await EstimateCsvFileRecordsAsync(file.FilePath, file.GetCsvConfig());
+                    this.DicEstimatedCsvFile[file.FilePath] = estimated;
+                    totalRecords += estimated;
                 }
                 long currentRecords = 0;
                 updateProgressStatus.SetTotalAmount(totalRecords * 2);
@@ -124,7 +130,10 @@ namespace CSVSplitter.Commands
                     listMiddleTempFIles.Add(ccTempFile2);
 
                     var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(this._viewModel.InputFiles[0].Header.Length);
-                    currentRecords += await SortCsvFileAsync(ccTempFile.FilePath, ccTempFile2.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                    var sortedCount = await SortCsvFileAsync(ccTempFile.FilePath, ccTempFile2.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                    currentRecords += sortedCount;
+                    totalRecords = ReconcileTotalRecords(totalRecords, sortedCount, this._viewModel.InputFiles.Select(f => f.FilePath));
+                    updateProgressStatus.SetTotalAmount(totalRecords * 2);
                     //this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
 
                     var outputFilePath = Path.Combine(this._viewModel.OutputFolder, Path.GetFileName(ccTempFile2.originalFilePath));
@@ -145,7 +154,10 @@ namespace CSVSplitter.Commands
                         listMiddleTempFIles.Add(ccTempFile);
 
                         var maxSortFileRecords = Global.Parameter.GetMaxSortFileRecords(file.Header.Length);
-                        currentRecords += await SortCsvFileAsync(file.FilePath, ccTempFile.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                        var sortedCount = await SortCsvFileAsync(file.FilePath, ccTempFile.FilePath, ccTempFile.CsvConfig, comp, ccTempFile.RawHeader, maxSortFileRecords);
+                        currentRecords += sortedCount;
+                        totalRecords = ReconcileTotalRecords(totalRecords, sortedCount, new[] { file.FilePath });
+                        updateProgressStatus.SetTotalAmount(totalRecords * 2);
                         this._viewModel.ProgressValue = (int)((double)currentRecords / (double)totalRecords * 100) / 2;
                     }
 
@@ -208,6 +220,84 @@ namespace CSVSplitter.Commands
                 count = this.DicCountCsvFile[inputFile];
             }
             return count;
+        }
+
+        private async Task<long> EstimateCsvFileRecordsAsync(string inputFile, CsvConfiguration config)
+        {
+            const int bufferSize = 1024 * 64;
+            byte[] buffer = new byte[bufferSize];
+            long newLineCount = 0;
+            long bytesReadTotal = 0;
+            byte lastByte = 0;
+            bool hasLastByte = false;
+
+            using (var stream = new FileStream(inputFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                while (true)
+                {
+                    int readSize = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    if (readSize <= 0)
+                    {
+                        break;
+                    }
+                    bytesReadTotal += readSize;
+                    for (int i = 0; i < readSize; i++)
+                    {
+                        if (buffer[i] == (byte)'\n')
+                        {
+                            newLineCount++;
+                        }
+                    }
+                    lastByte = buffer[readSize - 1];
+                    hasLastByte = true;
+                }
+            }
+
+            if (bytesReadTotal == 0)
+            {
+                return 0;
+            }
+
+            long estimatedLines = newLineCount;
+            if (hasLastByte && lastByte != (byte)'\n' && lastByte != (byte)'\r')
+            {
+                estimatedLines++;
+            }
+
+            if (config.HasHeaderRecord && estimatedLines > 0)
+            {
+                estimatedLines--;
+            }
+
+            return Math.Max(0, estimatedLines);
+        }
+
+        private long ReconcileTotalRecords(long estimatedTotalRecords, long actualRecords, IEnumerable<string> files)
+        {
+            long estimatedPart = 0;
+            bool hasTarget = false;
+            foreach (var file in files)
+            {
+                if (this.ReconciledFiles.Contains(file))
+                {
+                    continue;
+                }
+
+                if (this.DicEstimatedCsvFile.TryGetValue(file, out var estimated))
+                {
+                    estimatedPart += estimated;
+                }
+                this.ReconciledFiles.Add(file);
+                hasTarget = true;
+            }
+
+            if (!hasTarget)
+            {
+                return estimatedTotalRecords;
+            }
+
+            long correctedTotal = estimatedTotalRecords - estimatedPart + actualRecords;
+            return Math.Max(correctedTotal, 1);
         }
 
         private async Task<long> SortCsvFileAsync(string inputFile, string outputFile, CsvConfiguration config, SortComparer comp, string rawHeader, long maxSortFileRecords)
