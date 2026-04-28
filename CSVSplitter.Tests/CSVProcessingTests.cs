@@ -81,6 +81,50 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public void SortRows_しきい値未満は同一リストをインプレースソートすること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+
+            var rows = new List<SortCsvRow>
+            {
+                CreateRow(("Id", "3")),
+                CreateRow(("Id", "1")),
+                CreateRow(("Id", "2")),
+            };
+            rows.ForEach(r => r.SetSortKey(comparer));
+
+            var sorted = InvokeSortRows(command, rows, comparer);
+
+            Assert.Same(rows, sorted);
+            Assert.Equal(new[] { "1", "2", "3" }, sorted.Select(r => r.Data["Id"]?.ToString()).ToArray());
+        }
+
+        [Fact]
+        public void SortRows_しきい値以上は別リストを返してソートすること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+
+            var rows = Enumerable.Range(1, Const.PARALLEL_SORT_THRESHOLD)
+                .Select(i => CreateRow(("Id", (Const.PARALLEL_SORT_THRESHOLD - i + 1).ToString(CultureInfo.InvariantCulture))))
+                .ToList();
+            rows.ForEach(r => r.SetSortKey(comparer));
+
+            var sorted = InvokeSortRows(command, rows, comparer);
+
+            Assert.NotSame(rows, sorted);
+            Assert.Equal("1", sorted.First().Data["Id"]?.ToString());
+            Assert.Equal(Const.PARALLEL_SORT_THRESHOLD.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
+        }
+
+        [Fact]
         public async Task OutputCsvFileAsync_行数上限で分割されること()
         {
             using var env = new TestEnvironment();
@@ -534,6 +578,12 @@ namespace CSVSplitter.Tests
             var method = typeof(ConvertCommand).GetMethod("CountCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
             return await task;
+        }
+
+        private static List<SortCsvRow> InvokeSortRows(ConvertCommand command, List<SortCsvRow> rows, SortComparer comparer)
+        {
+            var method = typeof(ConvertCommand).GetMethod("SortRows", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (List<SortCsvRow>)method.Invoke(command, new object[] { rows, comparer });
         }
 
         private static void SetPrivateField(object instance, string fieldName, object value)
