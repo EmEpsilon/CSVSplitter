@@ -462,6 +462,7 @@ namespace CSVSplitter.Commands
             var outputFolder = Directory.GetParent(outputFile).FullName;
             var outputByHeader = new Dictionary<string, CCOutput>(StringComparer.Ordinal);
             var splitHeaderCount = ccSplitInfo.Headers.Count;
+            var splitHeaders = ccSplitInfo.Headers.ToArray();
 
             long countRecords = 0;
             using (var reader = new StreamReader(inputFile, config.Encoding))
@@ -476,17 +477,17 @@ namespace CSVSplitter.Commands
                         {
                             row = row + config.NewLine;
                         }
-                        var headerData = new List<string>(splitHeaderCount);
-                        foreach (var val in ccSplitInfo.Headers)
+                        var headerData = new string[splitHeaderCount];
+                        for (int i = 0; i < splitHeaderCount; i++)
                         {
-                            headerData.Add(data[val]?.ToString() ?? string.Empty);
+                            headerData[i] = data[splitHeaders[i]]?.ToString() ?? string.Empty;
                         }
                         var headerKey = BuildSplitRoutingKey(headerData);
                         if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
                         {
                             // Create new output file
                             var ccHeaderData = new CCHeaderData();
-                            ccHeaderData.Set(headerData);
+                            ccHeaderData.Set(headerData.ToList());
 
                             var outputFilePath = GetOutputFilePath(baseFileName + ccHeaderData.GetJoinHeaderData(), extention, outputFolder);
                             outputFiles.Add(outputFilePath);
@@ -556,9 +557,9 @@ namespace CSVSplitter.Commands
             return GetOutputFilePath(baseFileName, extention, outputFolder);
         }
 
-        private string BuildSplitRoutingKey(List<string> headerData)
+        private string BuildSplitRoutingKey(string[] headerData)
         {
-            var builder = new StringBuilder();
+            var builder = new StringBuilder(headerData.Length * 8);
             foreach (var item in headerData)
             {
                 var value = item ?? string.Empty;
