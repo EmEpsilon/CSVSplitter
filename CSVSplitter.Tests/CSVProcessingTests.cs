@@ -81,6 +81,67 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task EstimateCsvFileRecordsAsync_改行終端とヘッダー有無を考慮して推定できること()
+        {
+            using var env = new TestEnvironment();
+            var withHeader = env.CreateCsv(
+                "estimate_with_header.csv",
+                "Id,Name",
+                new[] { "1,Alice", "2,Bob", "3,Carol" },
+                new UTF8Encoding(false));
+
+            var withoutTrailingNewLine = env.Path("estimate_no_trailing_newline.csv");
+            File.WriteAllText(withoutTrailingNewLine, "Id,Name\r\n1,Alice\r\n2,Bob", new UTF8Encoding(false));
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var withHeaderInput = Analyze(withHeader);
+            var withHeaderEstimate = await InvokeEstimateCsvFileRecordsAsync(command, withHeader, withHeaderInput.GetCsvConfig());
+            Assert.Equal(3, withHeaderEstimate);
+
+            var configNoHeader = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = ",",
+                Encoding = new UTF8Encoding(false),
+                NewLine = "\r\n",
+                HasHeaderRecord = false,
+            };
+            var noTrailingEstimate = await InvokeEstimateCsvFileRecordsAsync(command, withoutTrailingNewLine, configNoHeader);
+            Assert.Equal(3, noTrailingEstimate);
+        }
+
+        [Fact]
+        public void ReconcileTotalRecords_推定値から実測値へ一度だけ補正できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            SetPrivateField(command, "DicEstimatedCsvFile", new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["a.csv"] = 100,
+                ["b.csv"] = 150,
+            });
+            SetPrivateField(command, "ReconciledFiles", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            var corrected = InvokeReconcileTotalRecords(command, 250, 240, new[] { "a.csv", "b.csv" });
+            Assert.Equal(240, corrected);
+
+            var correctedAgain = InvokeReconcileTotalRecords(command, corrected, 240, new[] { "a.csv", "b.csv" });
+            Assert.Equal(240, correctedAgain);
+        }
+
+        [Fact]
+        public void UpdateProgressStatus_総量差し替え後も進捗値が範囲内に収まること()
+        {
+            var vm = new MainWindowViewModel();
+            var progress = new UpdateProgressStatus(vm);
+
+            progress.SetTotalAmount(1000);
+            progress.SetCount(500);
+            progress.SetTotalAmount(800);
+            progress.SetCount(700);
+
+            Assert.InRange(vm.ProgressValue, 0, 100);
+        }
+
+        [Fact]
         public void SortRows_しきい値未満は同一リストをインプレースソートすること()
         {
             var command = CreateCommandForPrivateMethods(out _);
@@ -607,6 +668,19 @@ namespace CSVSplitter.Tests
             var method = typeof(ConvertCommand).GetMethod("CountCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
             return await task;
+        }
+
+        private static async Task<long> InvokeEstimateCsvFileRecordsAsync(ConvertCommand command, string inputFile, CsvConfiguration config)
+        {
+            var method = typeof(ConvertCommand).GetMethod("EstimateCsvFileRecordsAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+            var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
+            return await task;
+        }
+
+        private static long InvokeReconcileTotalRecords(ConvertCommand command, long estimatedTotalRecords, long actualRecords, IEnumerable<string> files)
+        {
+            var method = typeof(ConvertCommand).GetMethod("ReconcileTotalRecords", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (long)method.Invoke(command, new object[] { estimatedTotalRecords, actualRecords, files });
         }
 
         private static List<SortCsvRow> InvokeSortRows(ConvertCommand command, List<SortCsvRow> rows, SortComparer comparer)
