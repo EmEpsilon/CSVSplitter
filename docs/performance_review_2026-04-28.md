@@ -52,7 +52,6 @@
 - 比較器は既存 `SortComparer.CompareRecords` を流用。
 
 **リスク**
-- .NET Framework 4.6.2 では `PriorityQueue` が標準提供されないため、独自実装または別方式が必要。
 - 並び順の安定性（同値時の順序）を要件化しないと、結果差分が出る場合がある。
 
 ---
