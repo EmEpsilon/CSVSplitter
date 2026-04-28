@@ -187,6 +187,14 @@ namespace CSVSplitter.Commands
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
+                        if (config.HasHeaderRecord)
+                        {
+                            if (await csv.ReadAsync())
+                            {
+                                csv.ReadHeader();
+                            }
+                        }
+
                         while (await csv.ReadAsync())
                         {
                             count++;

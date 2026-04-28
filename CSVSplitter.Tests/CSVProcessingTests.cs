@@ -59,6 +59,28 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task CountCsvFileAsync_ヘッダーを除いたデータ行数を返すこと()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "count_input.csv",
+                "Id,Name",
+                new[]
+                {
+                    "1,Alice",
+                    "2,Bob",
+                    "3,Carol"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeCountCsvFileAsync(command, input, inputFile.GetCsvConfig());
+
+            Assert.Equal(3, count);
+        }
+
+        [Fact]
         public async Task OutputCsvFileAsync_行数上限で分割されること()
         {
             using var env = new TestEnvironment();
@@ -504,6 +526,13 @@ namespace CSVSplitter.Tests
         {
             var method = typeof(ConvertCommand).GetMethod("OutputCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             var task = (Task<long>)method.Invoke(command, new object[] { inputFile, outputFile, config, splitInfo, rawHeader });
+            return await task;
+        }
+
+        private static async Task<long> InvokeCountCsvFileAsync(ConvertCommand command, string inputFile, CsvConfiguration config)
+        {
+            var method = typeof(ConvertCommand).GetMethod("CountCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+            var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
             return await task;
         }
 
