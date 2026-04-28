@@ -189,10 +189,6 @@ namespace CSVSplitter.Commands
                     {
                         while (await csv.ReadAsync())
                         {
-                            if (count == 0)
-                            {
-                                var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
-                            }
                             count++;
                         }
                     }
@@ -241,9 +237,7 @@ namespace CSVSplitter.Commands
                     }
                 }
 
-                list = list.AsParallel()
-                       .OrderBy(r => r, comp)
-                       .ToList();
+                list = SortRows(list, comp);
 
                 using (var writer = new StreamWriter(outputFile, false, config.Encoding))
                 {
@@ -285,9 +279,7 @@ namespace CSVSplitter.Commands
                             countTmp++;
                             if (countTmp >= maxSortFileRecords)
                             {
-                                list = list.AsParallel()
-                                       .OrderBy(r => r, comp)
-                                       .ToList();
+                                list = SortRows(list, comp);
                                 using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
                                 {
                                     await writer.WriteAsync(rawHeader + config.NewLine);
@@ -323,9 +315,7 @@ namespace CSVSplitter.Commands
                     }
                     if(list.Count > 0)
                     {
-                        list = list.AsParallel()
-                               .OrderBy(r => r, comp)
-                               .ToList();
+                        list = SortRows(list, comp);
                         using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
                         {
                             await writer.WriteAsync(rawHeader + config.NewLine);
@@ -581,6 +571,24 @@ namespace CSVSplitter.Commands
             var ccHeaderData = new CCHeaderData();
             ccHeaderData.Set(headers);
             ccHeaderDataHashSet.Add(ccHeaderData);
+        }
+
+        private List<SortCsvRow> SortRows(List<SortCsvRow> rows, SortComparer comparer)
+        {
+            if (rows == null || rows.Count <= 1)
+            {
+                return rows;
+            }
+
+            if (rows.Count < Global.Const.PARALLEL_SORT_THRESHOLD)
+            {
+                rows.Sort(comparer);
+                return rows;
+            }
+
+            return rows.AsParallel()
+                       .OrderBy(r => r, comparer)
+                       .ToList();
         }
     }
 
