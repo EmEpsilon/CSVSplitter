@@ -388,51 +388,60 @@ namespace CSVSplitter.Commands
             using (var writer = new StreamWriter(outputFile, false, config.Encoding))
             {
                 await writer.WriteAsync(rawHeader + config.NewLine);
-                while (true)
+                if (comp.isEmpty())
                 {
-                    CCInput ccInputMin = null;
-                    int count = 0;
-                    for (int i = 0; i < inputList.Count; i++)
+                    foreach (var input in inputList)
                     {
-                        if (ccInputMin is null && !inputList[i].Closed)
+                        while (!input.Closed)
                         {
-                            ccInputMin = inputList[i];
-                            count++;
-                        }
-                        else if (
-                                   ccInputMin != null && !inputList[i].Closed
-                                && !comp.isEmpty()
-                            )
-                        {
-                            if (comp.CompareRecords(
-                                    ccInputMin.CurrentRecord,
-                                    ccInputMin.CurrentSortKeys,
-                                    ccInputMin.IsSortKeySet,
-                                    inputList[i].CurrentRecord,
-                                    inputList[i].CurrentSortKeys,
-                                    inputList[i].IsSortKeySet) > 0)
+                            var row = input.RawRecord;
+                            if (!row.EndsWith(config.NewLine))
                             {
-                                ccInputMin = inputList[i];
-                                count++;
+                                row = row + config.NewLine;
+                            }
+                            await writer.WriteAsync(row);
+                            await input.ReadAsync();
+                            input.SetSortKeys(comp);
+                            countRecords++;
+                            if (_updateProgressModeAtMerge)
+                            {
+                                this.updateProgressStatus.IncrementCount(1);
                             }
                         }
                     }
-                    if (count == 0)
+                }
+                else
+                {
+                    var heap = new CCInputMinHeap(comp);
+                    foreach (var input in inputList)
                     {
-                        break;
+                        if (!input.Closed)
+                        {
+                            heap.Push(input);
+                        }
                     }
-                    var row = ccInputMin.RawRecord;
-                    if (!row.EndsWith(config.NewLine))
+
+                    while (heap.Count > 0)
                     {
-                        row = row + config.NewLine;
-                    }
-                    await writer.WriteAsync(row);
-                    await ccInputMin.ReadAsync();
-                    ccInputMin.SetSortKeys(comp);
-                    countRecords++;
-                    if (_updateProgressModeAtMerge)
-                    {
-                        this.updateProgressStatus.IncrementCount(1);
+                        var ccInputMin = heap.PopMin();
+                        var row = ccInputMin.RawRecord;
+                        if (!row.EndsWith(config.NewLine))
+                        {
+                            row = row + config.NewLine;
+                        }
+                        await writer.WriteAsync(row);
+                        await ccInputMin.ReadAsync();
+                        ccInputMin.SetSortKeys(comp);
+                        countRecords++;
+                        if (_updateProgressModeAtMerge)
+                        {
+                            this.updateProgressStatus.IncrementCount(1);
+                        }
+
+                        if (!ccInputMin.Closed)
+                        {
+                            heap.Push(ccInputMin);
+                        }
                     }
                 }
             }
@@ -613,6 +622,95 @@ namespace CSVSplitter.Commands
         public CsvConfiguration CsvConfig { get; set; }
         public string RawHeader { get; set; }
         public string originalFilePath { get; set; }
+    }
+
+    internal class CCInputMinHeap
+    {
+        private readonly List<CCInput> _heap;
+        private readonly SortComparer _comparer;
+
+        public CCInputMinHeap(SortComparer comparer)
+        {
+            this._heap = new List<CCInput>();
+            this._comparer = comparer;
+        }
+
+        public int Count => this._heap.Count;
+
+        public void Push(CCInput input)
+        {
+            this._heap.Add(input);
+            SiftUp(this._heap.Count - 1);
+        }
+
+        public CCInput PopMin()
+        {
+            var result = this._heap[0];
+            var lastIndex = this._heap.Count - 1;
+            var last = this._heap[lastIndex];
+            this._heap.RemoveAt(lastIndex);
+            if (this._heap.Count > 0)
+            {
+                this._heap[0] = last;
+                SiftDown(0);
+            }
+            return result;
+        }
+
+        private void SiftUp(int index)
+        {
+            while (index > 0)
+            {
+                var parent = (index - 1) / 2;
+                if (Compare(this._heap[index], this._heap[parent]) >= 0)
+                {
+                    break;
+                }
+                Swap(index, parent);
+                index = parent;
+            }
+        }
+
+        private void SiftDown(int index)
+        {
+            var count = this._heap.Count;
+            while (true)
+            {
+                var left = index * 2 + 1;
+                if (left >= count)
+                {
+                    break;
+                }
+                var right = left + 1;
+                var minChild = right < count && Compare(this._heap[right], this._heap[left]) < 0
+                    ? right
+                    : left;
+                if (Compare(this._heap[minChild], this._heap[index]) >= 0)
+                {
+                    break;
+                }
+                Swap(index, minChild);
+                index = minChild;
+            }
+        }
+
+        private int Compare(CCInput x, CCInput y)
+        {
+            return this._comparer.CompareRecords(
+                x.CurrentRecord,
+                x.CurrentSortKeys,
+                x.IsSortKeySet,
+                y.CurrentRecord,
+                y.CurrentSortKeys,
+                y.IsSortKeySet);
+        }
+
+        private void Swap(int x, int y)
+        {
+            var tmp = this._heap[x];
+            this._heap[x] = this._heap[y];
+            this._heap[y] = tmp;
+        }
     }
 
     public class CCSplitInfo

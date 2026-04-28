@@ -206,6 +206,35 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task MergeCsvFileAsync_複数入力をキー順にマージできること()
+        {
+            using var env = new TestEnvironment();
+            var part1 = Analyze(env.CreateCsv("merge_part1.csv", "Id,Name", new[] { "1,A", "4,D", "7,G" }, new UTF8Encoding(false)));
+            var part2 = Analyze(env.CreateCsv("merge_part2.csv", "Id,Name", new[] { "2,B", "5,E", "8,H" }, new UTF8Encoding(false)));
+            var part3 = Analyze(env.CreateCsv("merge_part3.csv", "Id,Name", new[] { "3,C", "6,F", "9,I" }, new UTF8Encoding(false)));
+
+            var output = env.Path("merged_heap.csv");
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await command.MergeCsvFileAsync(
+                new List<string> { part1.FilePath, part2.FilePath, part3.FilePath },
+                output,
+                part1.GetCsvConfig(),
+                comparer,
+                part1.RawHeader);
+
+            Assert.Equal(9, count);
+            var rows = ReadAllLines(output, part1.Encoding).Skip(1).ToArray();
+            Assert.Equal(
+                new[] { "1,A", "2,B", "3,C", "4,D", "5,E", "6,F", "7,G", "8,H", "9,I" },
+                rows);
+        }
+
+        [Fact]
         public async Task SortCsvFileAsync_最大レコード超過時でもソートできること()
         {
             using var env = new TestEnvironment();
