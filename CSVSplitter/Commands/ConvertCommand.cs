@@ -475,7 +475,7 @@ namespace CSVSplitter.Commands
                         {
                             headerData.Add(data[val]?.ToString() ?? string.Empty);
                         }
-                        var headerKey = string.Join("\u001F", headerData);
+                        var headerKey = BuildSplitRoutingKey(headerData);
                         if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
                         {
                             // Create new output file
@@ -517,14 +517,7 @@ namespace CSVSplitter.Commands
 
         public string GetOutputFilePath(string baseFileName, string extention, string outputFolder)
         {
-            if (this.outputFiles is null)
-            {
-                this.outputFiles = new List<string>();
-            }
-            if (this.outputFilePathSet is null)
-            {
-                this.outputFilePathSet = new HashSet<string>(this.outputFiles, StringComparer.OrdinalIgnoreCase);
-            }
+            EnsureOutputPathSetInitialized();
 
             var result = "";
 
@@ -553,11 +546,34 @@ namespace CSVSplitter.Commands
 
         public string GetOutputFilePath(string baseFileName, string extention, string outputFolder, ref List<string> outputFiles)
         {
+            EnsureOutputPathSetInitialized(outputFiles);
+            return GetOutputFilePath(baseFileName, extention, outputFolder);
+        }
+
+        private string BuildSplitRoutingKey(List<string> headerData)
+        {
+            var builder = new StringBuilder();
+            foreach (var item in headerData)
+            {
+                var value = item ?? string.Empty;
+                builder.Append(value.Length);
+                builder.Append(':');
+                builder.Append(value);
+            }
+            return builder.ToString();
+        }
+
+        private void EnsureOutputPathSetInitialized(List<string> seedOutputFiles = null)
+        {
+            if (this.outputFiles is null)
+            {
+                this.outputFiles = seedOutputFiles ?? new List<string>();
+            }
+
             if (this.outputFilePathSet is null)
             {
-                this.outputFilePathSet = new HashSet<string>(outputFiles, StringComparer.OrdinalIgnoreCase);
+                this.outputFilePathSet = new HashSet<string>(this.outputFiles, StringComparer.OrdinalIgnoreCase);
             }
-            return GetOutputFilePath(baseFileName, extention, outputFolder);
         }
 
         public void AddCCHeaderData(ref HashSet<CCHeaderData> ccHeaderDataHashSet, List<string> headers)
