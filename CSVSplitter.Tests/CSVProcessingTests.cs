@@ -901,6 +901,58 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public void GetOutputFilePath_内部初期化後でもseed済みパスを衝突判定に反映できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var outputFolder = System.IO.Path.GetTempPath();
+
+            // 先に内部セットを初期化
+            var first = command.GetOutputFilePath("Seed Test", ".csv", outputFolder);
+            Assert.EndsWith("_1.csv", first, StringComparison.OrdinalIgnoreCase);
+
+            // 既存ファイル一覧を後から渡しても衝突判定に反映されること
+            var seeded = new List<string>
+            {
+                first,
+                System.IO.Path.Combine(outputFolder, "Seed_Test_2.csv")
+            };
+            var third = command.GetOutputFilePath("Seed Test", ".csv", outputFolder, ref seeded);
+
+            Assert.EndsWith("_3.csv", third, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_MaxCsvRecords判定でヘッダー行をデータ件数に含めないこと()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "header_counting_regression.csv",
+                "Group,Id",
+                new[]
+                {
+                    "A,1",
+                    "A,2",
+                    "A,3"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("header_counting_out.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 2;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+
+            await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+
+            var files = Directory.GetFiles(env.Root, "header_counting_out_A_*.csv").OrderBy(f => f).ToArray();
+            Assert.Equal(2, files.Length);
+
+            var rows = files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray();
+            Assert.Equal(new[] { 2, 1 }, rows);
+        }
+
+        [Fact]
         public void GetOutputFilePath_無効文字と空白を正規化できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
