@@ -749,6 +749,153 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task CountCsvFileAsync_空行を含むCSVでも実データ行を正しく数えられること()
+        {
+            using var env = new TestEnvironment();
+            var path = env.Path("count_with_blank_lines.csv");
+            var content = "Id,Name\r\n1,Alice\r\n\r\n2,Bob\r\n   \r\n3,Carol\r\n";
+            File.WriteAllText(path, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(path);
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeCountCsvFileAsync(command, path, inputFile.GetCsvConfig());
+
+            Assert.Equal(3, count);
+        }
+
+        [Fact]
+        public async Task SortCsvFileAsync_セミコロン区切りCSVでも数値ソートできること()
+        {
+            using var env = new TestEnvironment();
+            var path = env.Path("semicolon.csv");
+            var content = "Id;Name\r\n10;Judy\r\n2;Bob\r\n1;Alice\r\n";
+            File.WriteAllText(path, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(path);
+            Assert.Equal(';', inputFile.Delimiter);
+
+            var output = env.Path("semicolon_sorted.csv");
+            var comparer = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeSortCsvFileAsync(command, path, output, inputFile.GetCsvConfig(), comparer, inputFile.RawHeader, 1000);
+
+            Assert.Equal(3, count);
+            var lines = ReadAllLines(output, inputFile.Encoding);
+            Assert.Equal("Id;Name", lines[0]);
+            Assert.Equal("1;Alice", lines[1]);
+            Assert.Equal("2;Bob", lines[2]);
+            Assert.Equal("10;Judy", lines[3]);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_MaxCsvRecords指定時に同一キーを複数ファイルへローテーション出力できること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "rotation_input.csv",
+                "Group,Id",
+                new[]
+                {
+                    "A,1",
+                    "A,2",
+                    "A,3",
+                    "A,4",
+                    "A,5"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("rotation_out.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 2;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(5, count);
+
+            var files = Directory.GetFiles(env.Root, "rotation_out_A_*.csv").OrderBy(f => f).ToArray();
+            Assert.Equal(3, files.Length);
+            Assert.Equal(new[] { 2, 2, 1 }, files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray());
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_分割キー未指定なら単一ファイルへ出力されること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "no_split_header.csv",
+                "Group,Id,Name",
+                new[]
+                {
+                    "A,1,Alice",
+                    "B,2,Bob",
+                    "C,3,Carol",
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("no_split_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo(); // ヘッダー追加なし
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var files = Directory.GetFiles(env.Root, "no_split_result_*.csv");
+            Assert.Single(files);
+            Assert.Equal(4, ReadAllLines(files[0], inputFile.Encoding).Length); // ヘッダー + 3件
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_同一ヘッダーを重複指定しても分割動作が安定すること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "duplicate_split_header.csv",
+                "Group,Id",
+                new[]
+                {
+                    "A,1",
+                    "A,2",
+                    "B,3",
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("duplicate_split_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+            splitInfo.AddHeader("Group");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var filesA = Directory.GetFiles(env.Root, "duplicate_split_result_A_A_*.csv");
+            var filesB = Directory.GetFiles(env.Root, "duplicate_split_result_B_B_*.csv");
+            Assert.Single(filesA);
+            Assert.Single(filesB);
+        }
+
+        [Fact]
+        public void GetOutputFilePath_大文字小文字違いの既存名と衝突しても重複回避できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var outputFolder = System.IO.Path.GetTempPath();
+            var used = new List<string>();
+
+            var first = System.IO.Path.Combine(outputFolder, "Case_Test_1.csv");
+            used.Add(first);
+            var second = command.GetOutputFilePath("Case Test", ".csv", outputFolder, ref used);
+
+            Assert.False(string.Equals(first, second, StringComparison.OrdinalIgnoreCase));
+            Assert.EndsWith("_2.csv", second, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public void GetOutputFilePath_無効文字と空白を正規化できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
