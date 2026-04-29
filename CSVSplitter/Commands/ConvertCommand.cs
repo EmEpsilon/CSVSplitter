@@ -1168,20 +1168,6 @@ namespace CSVSplitter.Commands
             return indexes;
         }
 
-        private static IDictionary<string, string> ReadCurrentRecordAsDictionary(CsvReader csv)
-        {
-            var header = csv.HeaderRecord ?? Array.Empty<string>();
-            var record = csv.Parser.Record ?? Array.Empty<string>();
-            var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
-            for (int i = 0; i < header.Length; i++)
-            {
-                var key = header[i] ?? string.Empty;
-                var value = i < record.Length ? record[i] : null;
-                data[key] = value;
-            }
-            return data;
-        }
-
         private IDictionary<string, string> ReadCurrentRecordAsDictionary()
         {
             var header = this._currentHeader ?? Array.Empty<string>();
