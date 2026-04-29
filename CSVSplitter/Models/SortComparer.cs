@@ -164,11 +164,12 @@ namespace CSVSplitter.Models
 
         private static string GetValueOrNull(IDictionary<string, string> data, string key)
         {
-            if (data == null || key == null)
+            if (data == null)
             {
                 return null;
             }
-            return data.TryGetValue(key, out var value) ? value : null;
+            var safeKey = key ?? string.Empty;
+            return data.TryGetValue(safeKey, out var value) ? value : null;
         }
     }
 
