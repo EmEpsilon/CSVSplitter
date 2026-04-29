@@ -709,10 +709,8 @@ namespace CSVSplitter.Commands
             {
                 for (int i = 0; i < headerRecord.Length; i++)
                 {
-                    if (!headerMap.ContainsKey(headerRecord[i]))
-                    {
-                        headerMap.Add(headerRecord[i], i);
-                    }
+                    var key = headerRecord[i] ?? string.Empty;
+                    headerMap.TryAdd(key, i);
                 }
             }
 
