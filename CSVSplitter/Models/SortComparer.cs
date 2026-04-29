@@ -130,14 +130,8 @@ namespace CSVSplitter.Models
                     {
                         double tmp1;
                         double tmp2;
-                        if (!xData.TryGetValue(option.ColName, out var xValue))
-                        {
-                            xValue = null;
-                        }
-                        if (!yData.TryGetValue(option.ColName, out var yValue))
-                        {
-                            yValue = null;
-                        }
+                        var xValue = GetValueOrNull(xData, option.ColName);
+                        var yValue = GetValueOrNull(yData, option.ColName);
                         if (!double.TryParse(xValue, out tmp1))
                         {
                             tmp1 = 0;
@@ -150,14 +144,8 @@ namespace CSVSplitter.Models
                     }
                     else
                     {
-                        if (!xData.TryGetValue(option.ColName, out var xValue))
-                        {
-                            xValue = null;
-                        }
-                        if (!yData.TryGetValue(option.ColName, out var yValue))
-                        {
-                            yValue = null;
-                        }
+                        var xValue = GetValueOrNull(xData, option.ColName);
+                        var yValue = GetValueOrNull(yData, option.ColName);
                         result = String.Compare(xValue, yValue, StringComparison.Ordinal);
                     }
                     if (result != 0)
@@ -172,6 +160,15 @@ namespace CSVSplitter.Models
         public bool isEmpty()
         {
             return this.Options.Count == 0;
+        }
+
+        private static string GetValueOrNull(IDictionary<string, string> data, string key)
+        {
+            if (data == null || key == null)
+            {
+                return null;
+            }
+            return data.TryGetValue(key, out var value) ? value : null;
         }
     }
 
