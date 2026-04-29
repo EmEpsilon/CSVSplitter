@@ -704,6 +704,11 @@ namespace CSVSplitter.Commands
 
         private int[] ResolveHeaderIndexes(string[] headerRecord, string[] targetHeaders)
         {
+            if (targetHeaders == null || targetHeaders.Length == 0)
+            {
+                return Array.Empty<int>();
+            }
+
             var headerMap = new Dictionary<string, int>(StringComparer.Ordinal);
             if (headerRecord != null)
             {
