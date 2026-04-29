@@ -510,9 +510,10 @@ namespace CSVSplitter.Commands
         {
             Utils.DebugTool.WriteLine("MergeCsvFileAsync:" + string.Join(",", inputFiles) + " -> " + outputFile);
             var inputList = new List<CCInput>(inputFiles.Count);
-            foreach (var inputFile in inputFiles)
+            for (int inputOrder = 0; inputOrder < inputFiles.Count; inputOrder++)
             {
-                var ccInput = new CCInput(inputFile, config.Encoding, config);
+                var inputFile = inputFiles[inputOrder];
+                var ccInput = new CCInput(inputFile, config.Encoding, config, inputOrder);
                 inputList.Add(ccInput);
             }
 
@@ -892,13 +893,19 @@ namespace CSVSplitter.Commands
 
         public int Compare(CCInput x, CCInput y)
         {
-            return this._comparer.CompareRecords(
+            var result = this._comparer.CompareRecords(
                 x.CurrentRecord,
                 x.CurrentSortKeys,
                 x.IsSortKeySet,
                 y.CurrentRecord,
                 y.CurrentSortKeys,
                 y.IsSortKeySet);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            return x.InputOrder.CompareTo(y.InputOrder);
         }
     }
 
@@ -1160,11 +1167,14 @@ namespace CSVSplitter.Commands
                 return _csvConfig;
             }
         }
-        public CCInput(string prmFilePath, Encoding prmEncoding, CsvConfiguration csvConfig)
+        public int InputOrder { get; }
+
+        public CCInput(string prmFilePath, Encoding prmEncoding, CsvConfiguration csvConfig, int inputOrder)
         {
             this._filePath = prmFilePath;
             this._encoding = prmEncoding;
             this._csvConfig = csvConfig;
+            this.InputOrder = inputOrder;
             this._reader = new StreamReader(
                 new FileStream(prmFilePath, new FileStreamOptions
                 {
