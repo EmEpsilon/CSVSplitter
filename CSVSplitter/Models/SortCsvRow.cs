@@ -22,6 +22,12 @@ namespace CSVSplitter.Models
             SortKeyArray = comp.BuildSortKeys(this.Data);
             this.isSettedKey = true;
         }
+
+        public void SetSortKey(SortComparer comp, string[] recordValues, int[] optionIndexes)
+        {
+            SortKeyArray = comp.BuildSortKeys(recordValues, optionIndexes);
+            this.isSettedKey = true;
+        }
     }
 
     public struct SortKey

@@ -57,6 +57,40 @@ namespace CSVSplitter.Models
             return sortKeys;
         }
 
+        public SortKey[] BuildSortKeys(string[] recordValues, int[] optionIndexes)
+        {
+            if (this.Options.Count == 0)
+            {
+                return Array.Empty<SortKey>();
+            }
+
+            var sortKeys = new SortKey[this.Options.Count];
+            for (int i = 0; i < this.Options.Count; i++)
+            {
+                var option = this.Options[i];
+                var columnIndex = (optionIndexes != null && i < optionIndexes.Length) ? optionIndexes[i] : -1;
+                var valueText = (recordValues != null && columnIndex >= 0 && columnIndex < recordValues.Length)
+                    ? recordValues[columnIndex]
+                    : null;
+
+                SortKey key = new SortKey();
+                if (option.IsNumeric)
+                {
+                    if (!double.TryParse(valueText, out var num))
+                    {
+                        num = 0;
+                    }
+                    key.num = num;
+                }
+                else
+                {
+                    key.obj = valueText ?? "";
+                }
+                sortKeys[i] = key;
+            }
+            return sortKeys;
+        }
+
         public int CompareRecords(
             IDictionary<string, string> xData,
             SortKey[] xSortKeys,
