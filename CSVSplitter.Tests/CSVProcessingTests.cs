@@ -389,6 +389,42 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task MergeCsvFileAsync_引用符内改行を含むデータもキー順でマージできること()
+        {
+            using var env = new TestEnvironment();
+            var p1 = env.Path("merge_multiline1.csv");
+            var p2 = env.Path("merge_multiline2.csv");
+            File.WriteAllText(p1, "Id,Note\r\n1,\"A1\r\nA2\"\r\n3,\"C\"\r\n", new UTF8Encoding(false));
+            File.WriteAllText(p2, "Id,Note\r\n2,\"B1\r\nB2\"\r\n4,\"D\"\r\n", new UTF8Encoding(false));
+
+            var f1 = Analyze(p1);
+            var f2 = Analyze(p2);
+            var output = env.Path("merge_multiline_out.csv");
+            var comparer = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+
+            var count = await command.MergeCsvFileAsync(new List<string> { f1.FilePath, f2.FilePath }, output, f1.GetCsvConfig(), comparer, f1.RawHeader);
+            Assert.Equal(4, count);
+
+            using var reader = new StreamReader(output, f1.Encoding);
+            using var csv = new CsvReader(reader, f1.GetCsvConfig());
+            var ids = new List<string>();
+            var notes = new List<string>();
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
+            while (await csv.ReadAsync())
+            {
+                ids.Add(csv.GetField("Id"));
+                notes.Add(csv.GetField("Note"));
+            }
+            Assert.Equal(new[] { "1", "2", "3", "4" }, ids);
+            Assert.Equal("A1\r\nA2", notes[0]);
+            Assert.Equal("B1\r\nB2", notes[1]);
+        }
+
+        [Fact]
         public async Task SortCsvFileAsync_最大レコード超過時でもソートできること()
         {
             using var env = new TestEnvironment();
