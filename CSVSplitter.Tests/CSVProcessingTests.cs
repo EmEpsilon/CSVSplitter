@@ -110,6 +110,32 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task EstimateCsvFileRecordsAsync_空ファイルとヘッダーのみファイルを推定できること()
+        {
+            using var env = new TestEnvironment();
+            var empty = env.Path("empty.csv");
+            File.WriteAllText(empty, string.Empty, new UTF8Encoding(false));
+
+            var headerOnly = env.Path("header_only.csv");
+            File.WriteAllText(headerOnly, "Id,Name\r\n", new UTF8Encoding(false));
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var configWithHeader = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = ",",
+                Encoding = new UTF8Encoding(false),
+                NewLine = "\r\n",
+                HasHeaderRecord = true,
+            };
+
+            var emptyEstimated = await InvokeEstimateCsvFileRecordsAsync(command, empty, configWithHeader);
+            var headerOnlyEstimated = await InvokeEstimateCsvFileRecordsAsync(command, headerOnly, configWithHeader);
+
+            Assert.Equal(0, emptyEstimated);
+            Assert.Equal(0, headerOnlyEstimated);
+        }
+
+        [Fact]
         public void ReconcileTotalRecords_推定値から実測値へ一度だけ補正できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
@@ -125,6 +151,25 @@ namespace CSVSplitter.Tests
 
             var correctedAgain = InvokeReconcileTotalRecords(command, corrected, 240, new[] { "a.csv", "b.csv" });
             Assert.Equal(240, correctedAgain);
+        }
+
+        [Fact]
+        public void ReconcileTotalRecords_一部ファイルのみ補正した後に残りを補正できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            SetPrivateField(command, "DicEstimatedCsvFile", new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["a.csv"] = 100,
+                ["b.csv"] = 150,
+                ["c.csv"] = 200,
+            });
+            SetPrivateField(command, "ReconciledFiles", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            var afterA = InvokeReconcileTotalRecords(command, 450, 90, new[] { "a.csv" });
+            Assert.Equal(440, afterA); // 450 - 100 + 90
+
+            var afterBC = InvokeReconcileTotalRecords(command, afterA, 320, new[] { "b.csv", "c.csv" });
+            Assert.Equal(410, afterBC); // 440 - (150+200) + 320
         }
 
         [Fact]
