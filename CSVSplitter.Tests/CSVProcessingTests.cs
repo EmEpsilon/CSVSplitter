@@ -568,6 +568,10 @@ namespace CSVSplitter.Tests
 
             using var reader = new StreamReader(output, inputFile.Encoding);
             using var csv = new CsvReader(reader, inputFile.GetCsvConfig());
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
             var rows = new List<Dictionary<string, string>>();
             while (await csv.ReadAsync())
             {
@@ -637,8 +641,8 @@ namespace CSVSplitter.Tests
             var count = await InvokeOutputCsvFileAsync(command, inputPath, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
             Assert.Equal(3, count);
 
-            var filesA = Directory.GetFiles(env.Root, "quoted_escape_result_A,1_X\"Y_*.csv");
-            var filesB = Directory.GetFiles(env.Root, "quoted_escape_result_B,2_Q\"R_*.csv");
+            var filesA = Directory.GetFiles(env.Root, "quoted_escape_result_A,1_X*Y_*.csv");
+            var filesB = Directory.GetFiles(env.Root, "quoted_escape_result_B,2_Q*R_*.csv");
             Assert.Single(filesA);
             Assert.Single(filesB);
         }
