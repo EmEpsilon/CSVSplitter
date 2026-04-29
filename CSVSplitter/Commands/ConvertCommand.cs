@@ -559,26 +559,33 @@ namespace CSVSplitter.Commands
             {
                 using(var csv = new CsvReader(reader,config))
                 {
+                    int[] splitHeaderIndexes = null;
                     if (config.HasHeaderRecord)
                     {
                         if (await csv.ReadAsync())
                         {
                             csv.ReadHeader();
+                            splitHeaderIndexes = ResolveSplitHeaderIndexes(csv.HeaderRecord, splitHeaders);
                         }
+                    }
+                    else
+                    {
+                        splitHeaderIndexes = ResolveSplitHeaderIndexes(csv.HeaderRecord, splitHeaders);
                     }
 
                     while (await csv.ReadAsync())
                     {
-                        var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
                         var row = csv.Context.Parser.RawRecord;
                         if(!row.EndsWith(config.NewLine))
                         {
                             row = row + config.NewLine;
                         }
+                        var record = csv.Parser.Record ?? Array.Empty<string>();
                         var headerData = new string[splitHeaderCount];
                         for (int i = 0; i < splitHeaderCount; i++)
                         {
-                            headerData[i] = data[splitHeaders[i]]?.ToString() ?? string.Empty;
+                            var index = splitHeaderIndexes[i];
+                            headerData[i] = (index >= 0 && index < record.Length) ? record[index] ?? string.Empty : string.Empty;
                         }
                         var headerKey = BuildSplitRoutingKey(headerData);
                         if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
@@ -666,6 +673,31 @@ namespace CSVSplitter.Commands
                 builder.Append(value);
             }
             return builder.ToString();
+        }
+
+        private int[] ResolveSplitHeaderIndexes(string[] headerRecord, string[] splitHeaders)
+        {
+            var headerMap = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (headerRecord != null)
+            {
+                for (int i = 0; i < headerRecord.Length; i++)
+                {
+                    if (!headerMap.ContainsKey(headerRecord[i]))
+                    {
+                        headerMap.Add(headerRecord[i], i);
+                    }
+                }
+            }
+
+            var indexes = new int[splitHeaders.Length];
+            for (int i = 0; i < splitHeaders.Length; i++)
+            {
+                if (!headerMap.TryGetValue(splitHeaders[i], out indexes[i]))
+                {
+                    indexes[i] = -1;
+                }
+            }
+            return indexes;
         }
 
         private void EnsureOutputPathSetInitialized(List<string> seedOutputFiles = null)

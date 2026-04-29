@@ -648,6 +648,34 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task OutputCsvFileAsync_分割キー列が存在しない場合は空キーとして処理できること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "missing_split_header.csv",
+                "Group,Id",
+                new[]
+                {
+                    "A,1",
+                    "B,2"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("missing_split_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("NotFound");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(2, count);
+
+            var files = Directory.GetFiles(env.Root, "missing_split_result_*.csv");
+            Assert.Single(files);
+        }
+
+        [Fact]
         public void GetOutputFilePath_無効文字と空白を正規化できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
