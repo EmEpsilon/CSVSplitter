@@ -1031,6 +1031,110 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public void SplitRoutingKeyComparer_Equals_長さ不一致と値不一致を判定できること()
+        {
+            var asm = typeof(ConvertCommand).Assembly;
+            var keyType = asm.GetType("CSVSplitter.Commands.SplitRoutingKey", throwOnError: true);
+            var comparerType = asm.GetType("CSVSplitter.Commands.SplitRoutingKeyComparer", throwOnError: true);
+            var instance = comparerType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            var equalsMethod = comparerType.GetMethod("Equals", new[] { keyType, keyType });
+
+            object CreateKey(params string[] values)
+            {
+                return Activator.CreateInstance(keyType, new object[] { values });
+            }
+
+            var a = CreateKey("A");
+            var b = CreateKey("A", "B");
+            var c = CreateKey("A", "X");
+
+            var lengthMismatch = (bool)equalsMethod.Invoke(instance, new[] { a, b });
+            var valueMismatch = (bool)equalsMethod.Invoke(instance, new[] { b, c });
+
+            Assert.False(lengthMismatch);
+            Assert.False(valueMismatch);
+        }
+
+        [Fact]
+        public async Task MergeCsvFileAsync_同一ソートキー時は入力順で安定マージできること()
+        {
+            using var env = new TestEnvironment();
+            var p1 = env.CreateCsv("stable1.csv", "Id,Tag", new[] { "1,F1", "2,F1" }, new UTF8Encoding(false));
+            var p2 = env.CreateCsv("stable2.csv", "Id,Tag", new[] { "1,F2", "2,F2" }, new UTF8Encoding(false));
+            var f1 = Analyze(p1);
+            var output = env.Path("stable_merge.csv");
+            var comp = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+
+            await command.MergeCsvFileAsync(new List<string> { p1, p2 }, output, f1.GetCsvConfig(), comp, f1.RawHeader);
+            var rows = ReadAllLines(output, f1.Encoding).Skip(1).ToArray();
+
+            Assert.Equal(new[] { "1,F1", "1,F2", "2,F1", "2,F2" }, rows);
+        }
+
+        [Fact]
+        public async Task MergeCsvFileAsync_末尾改行なし入力でも全行をマージできること()
+        {
+            using var env = new TestEnvironment();
+            var p1 = env.Path("merge_no_newline1.csv");
+            var p2 = env.Path("merge_no_newline2.csv");
+            File.WriteAllText(p1, "Id,Name\r\n1,A\r\n3,C", new UTF8Encoding(false));
+            File.WriteAllText(p2, "Id,Name\r\n2,B\r\n4,D", new UTF8Encoding(false));
+
+            var f1 = Analyze(p1);
+            var output = env.Path("merge_no_newline_out.csv");
+            var comp = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+
+            var count = await command.MergeCsvFileAsync(new List<string> { p1, p2 }, output, f1.GetCsvConfig(), comp, f1.RawHeader);
+            Assert.Equal(4, count);
+            Assert.Equal(new[] { "1,A", "2,B", "3,C", "4,D" }, ReadAllLines(output, f1.Encoding).Skip(1).ToArray());
+        }
+
+        [Fact]
+        public async Task SortCsvFileAsync_一時ファイル経由ソートでも改行補完とバッファflushが機能すること()
+        {
+            using var env = new TestEnvironment();
+            var lines = Enumerable.Range(1, 1200).Select(i => $"{1201 - i},V{i}").ToList();
+            var inputPath = env.Path("external_sort_no_newline.csv");
+            File.WriteAllText(inputPath, "Id,Val\r\n" + string.Join("\r\n", lines), new UTF8Encoding(false)); // 最終行改行なし
+            var inputFile = Analyze(inputPath);
+            var output = env.Path("external_sort_out.csv");
+            var comp = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+
+            var count = await InvokeSortCsvFileAsync(command, inputPath, output, inputFile.GetCsvConfig(), comp, inputFile.RawHeader, 200);
+            Assert.Equal(1200, count);
+
+            var outLines = ReadAllLines(output, inputFile.Encoding);
+            Assert.Equal("1,V1200", outLines[1]);
+            Assert.Equal("1200,V1", outLines[^1]);
+        }
+
+        [Fact]
+        public async Task CCOutput_Write系バッファ閾値超過時も正しく書き出せること()
+        {
+            using var env = new TestEnvironment();
+            var path = env.Path("ccoutput_threshold.csv");
+            var cc = new CCOutput(path, new UTF8Encoding(false));
+
+            for (int i = 0; i < 500; i++)
+            {
+                await cc.WriteHeaderAsync("H,1\r\n");
+            }
+            for (int i = 0; i < 500; i++)
+            {
+                await cc.WriteAsync("D,1\r\n");
+            }
+            await cc.WriteFlush();
+            cc.Close();
+
+            var all = File.ReadAllText(path, new UTF8Encoding(false));
+            Assert.Contains("H,1", all, StringComparison.Ordinal);
+            Assert.Contains("D,1", all, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void GetOutputFilePath_無効文字と空白を正規化できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
