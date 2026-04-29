@@ -34,7 +34,11 @@ namespace CSVSplitter.Models
                 if (option.IsNumeric)
                 {
                     double num;
-                    if (!double.TryParse(data[option.ColName], out num))
+                    if (!data.TryGetValue(option.ColName, out var valueText))
+                    {
+                        valueText = null;
+                    }
+                    if (!double.TryParse(valueText, out num))
                     {
                         num = 0;
                     }
@@ -42,7 +46,11 @@ namespace CSVSplitter.Models
                 }
                 else
                 {
-                    key.obj = data[option.ColName] ?? "";
+                    if (!data.TryGetValue(option.ColName, out var valueText))
+                    {
+                        valueText = null;
+                    }
+                    key.obj = valueText ?? "";
                 }
                 sortKeys[i] = key;
             }
@@ -93,11 +101,19 @@ namespace CSVSplitter.Models
                     {
                         double tmp1;
                         double tmp2;
-                        if (!double.TryParse(xData[option.ColName], out tmp1))
+                        if (!xData.TryGetValue(option.ColName, out var xValue))
+                        {
+                            xValue = null;
+                        }
+                        if (!yData.TryGetValue(option.ColName, out var yValue))
+                        {
+                            yValue = null;
+                        }
+                        if (!double.TryParse(xValue, out tmp1))
                         {
                             tmp1 = 0;
                         }
-                        if (!double.TryParse(yData[option.ColName], out tmp2))
+                        if (!double.TryParse(yValue, out tmp2))
                         {
                             tmp2 = 0;
                         }
@@ -105,7 +121,15 @@ namespace CSVSplitter.Models
                     }
                     else
                     {
-                        result = String.Compare(xData[option.ColName], yData[option.ColName], StringComparison.Ordinal);
+                        if (!xData.TryGetValue(option.ColName, out var xValue))
+                        {
+                            xValue = null;
+                        }
+                        if (!yData.TryGetValue(option.ColName, out var yValue))
+                        {
+                            yValue = null;
+                        }
+                        result = String.Compare(xValue, yValue, StringComparison.Ordinal);
                     }
                     if (result != 0)
                     {

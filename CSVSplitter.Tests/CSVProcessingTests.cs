@@ -487,6 +487,33 @@ namespace CSVSplitter.Tests
             Assert.Equal("Alice", rows[2].Data["Name"]);
         }
 
+        [Fact]
+        public async Task SortCsvFileAsync_存在しないソート列を指定しても例外にならないこと()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "missing_sort_column.csv",
+                "Id,Name",
+                new[]
+                {
+                    "2,Bob",
+                    "1,Alice"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var output = env.Path("missing_sort_column_out.csv");
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("NotFoundColumn", false, false),
+                new SortOption("Id", false, true),
+            });
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeSortCsvFileAsync(command, input, output, inputFile.GetCsvConfig(), comparer, inputFile.RawHeader, 1000);
+            Assert.Equal(2, count);
+        }
+
         [Theory]
         [MemberData(nameof(GetEncodingPatternCases))]
         public void 文字コード判定_多様な文字コードと文字種パターンでCSVとして認識できること(
