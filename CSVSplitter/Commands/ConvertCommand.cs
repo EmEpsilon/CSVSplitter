@@ -320,24 +320,26 @@ namespace CSVSplitter.Commands
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
+                        int[] sortHeaderIndexes = null;
                         if (config.HasHeaderRecord)
                         {
                             if (await csv.ReadAsync())
                             {
                                 csv.ReadHeader();
+                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, comp.Options.Select(o => o.ColName).ToArray());
                             }
                         }
 
                         while (await csv.ReadAsync())
                         {
                             var row = new Models.SortCsvRow();
-                            row.Data = ReadCurrentRecordAsDictionary(csv);
+                            var recordValues = csv.Parser.Record ?? Array.Empty<string>();
                             row.RawData = csv.Context.Parser.RawRecord;
                             if (!row.RawData.EndsWith(config.NewLine))
                             {
                                 row.RawData = row.RawData + config.NewLine;
                             }
-                            row.SetSortKey(comp);
+                            row.SetSortKey(comp, recordValues, sortHeaderIndexes ?? Array.Empty<int>());
                             list.Add(row);
                         }
                     }
@@ -370,11 +372,13 @@ namespace CSVSplitter.Commands
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
+                        int[] sortHeaderIndexes = null;
                         if (config.HasHeaderRecord)
                         {
                             if (await csv.ReadAsync())
                             {
                                 csv.ReadHeader();
+                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, comp.Options.Select(o => o.ColName).ToArray());
                             }
                         }
 
@@ -382,13 +386,13 @@ namespace CSVSplitter.Commands
                         while (await csv.ReadAsync())
                         {
                             var row = new Models.SortCsvRow();
-                            row.Data = ReadCurrentRecordAsDictionary(csv);
+                            var recordValues = csv.Parser.Record ?? Array.Empty<string>();
                             row.RawData = csv.Context.Parser.RawRecord;
                             if (!row.RawData.EndsWith(config.NewLine))
                             {
                                 row.RawData = row.RawData + config.NewLine;
                             }
-                            row.SetSortKey(comp);
+                            row.SetSortKey(comp, recordValues, sortHeaderIndexes ?? Array.Empty<int>());
                             list.Add(row);
                             countTmp++;
                             if (countTmp >= maxSortFileRecords)
@@ -693,6 +697,11 @@ namespace CSVSplitter.Commands
 
         private int[] ResolveSplitHeaderIndexes(string[] headerRecord, string[] splitHeaders)
         {
+            return ResolveHeaderIndexes(headerRecord, splitHeaders);
+        }
+
+        private int[] ResolveHeaderIndexes(string[] headerRecord, string[] targetHeaders)
+        {
             var headerMap = new Dictionary<string, int>(StringComparer.Ordinal);
             if (headerRecord != null)
             {
@@ -705,10 +714,11 @@ namespace CSVSplitter.Commands
                 }
             }
 
-            var indexes = new int[splitHeaders.Length];
-            for (int i = 0; i < splitHeaders.Length; i++)
+            var indexes = new int[targetHeaders.Length];
+            for (int i = 0; i < targetHeaders.Length; i++)
             {
-                if (!headerMap.TryGetValue(splitHeaders[i], out indexes[i]))
+                var key = targetHeaders[i] ?? string.Empty;
+                if (!headerMap.TryGetValue(key, out indexes[i]))
                 {
                     indexes[i] = -1;
                 }
