@@ -837,11 +837,22 @@ namespace CSVSplitter.Tests
             using var reader = new StreamReader(output, inputFile.Encoding);
             using var csv = new CsvReader(reader, inputFile.GetCsvConfig());
             SortCsvRow previous = null;
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
             while (await csv.ReadAsync())
             {
+                var header = csv.HeaderRecord ?? Array.Empty<string>();
+                var record = csv.Parser.Record ?? Array.Empty<string>();
+                var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
+                for (int i = 0; i < header.Length; i++)
+                {
+                    data[header[i]] = i < record.Length ? record[i] : null;
+                }
                 var now = new SortCsvRow
                 {
-                    Data = csv.GetRecord<dynamic>() as IDictionary<string, object>
+                    Data = data
                 };
                 now.SetSortKey(comparer);
                 if (previous != null)
@@ -856,7 +867,7 @@ namespace CSVSplitter.Tests
         {
             var row = new SortCsvRow
             {
-                Data = pairs.ToDictionary(p => p.Key, p => (object)p.Value)
+                Data = pairs.ToDictionary(p => p.Key, p => p.Value)
             };
             return row;
         }

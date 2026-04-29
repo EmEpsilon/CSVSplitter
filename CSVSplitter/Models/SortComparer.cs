@@ -19,7 +19,7 @@ namespace CSVSplitter.Models
             return CompareCore(x.Data, y.Data, x.SortKeyArray, y.SortKeyArray, x.isSettedKey, y.isSettedKey);
         }
 
-        public SortKey[] BuildSortKeys(IDictionary<string, object> data)
+        public SortKey[] BuildSortKeys(IDictionary<string, string> data)
         {
             if (this.Options.Count == 0)
             {
@@ -34,7 +34,7 @@ namespace CSVSplitter.Models
                 if (option.IsNumeric)
                 {
                     double num;
-                    if (!double.TryParse(data[option.ColName]?.ToString(), out num))
+                    if (!double.TryParse(data[option.ColName], out num))
                     {
                         num = 0;
                     }
@@ -42,7 +42,7 @@ namespace CSVSplitter.Models
                 }
                 else
                 {
-                    key.obj = data[option.ColName]?.ToString() ?? "";
+                    key.obj = data[option.ColName] ?? "";
                 }
                 sortKeys[i] = key;
             }
@@ -50,10 +50,10 @@ namespace CSVSplitter.Models
         }
 
         public int CompareRecords(
-            IDictionary<string, object> xData,
+            IDictionary<string, string> xData,
             SortKey[] xSortKeys,
             bool xHasSortKeys,
-            IDictionary<string, object> yData,
+            IDictionary<string, string> yData,
             SortKey[] ySortKeys,
             bool yHasSortKeys)
         {
@@ -61,8 +61,8 @@ namespace CSVSplitter.Models
         }
 
         private int CompareCore(
-            IDictionary<string, object> xData,
-            IDictionary<string, object> yData,
+            IDictionary<string, string> xData,
+            IDictionary<string, string> yData,
             SortKey[] xSortKeys,
             SortKey[] ySortKeys,
             bool xHasSortKeys,
@@ -93,11 +93,11 @@ namespace CSVSplitter.Models
                     {
                         double tmp1;
                         double tmp2;
-                        if (!double.TryParse(xData[option.ColName]?.ToString(), out tmp1))
+                        if (!double.TryParse(xData[option.ColName], out tmp1))
                         {
                             tmp1 = 0;
                         }
-                        if (!double.TryParse(yData[option.ColName]?.ToString(), out tmp2))
+                        if (!double.TryParse(yData[option.ColName], out tmp2))
                         {
                             tmp2 = 0;
                         }
@@ -105,7 +105,7 @@ namespace CSVSplitter.Models
                     }
                     else
                     {
-                        result = String.Compare(xData[option.ColName]?.ToString(), yData[option.ColName]?.ToString(), StringComparison.Ordinal);
+                        result = String.Compare(xData[option.ColName], yData[option.ColName], StringComparison.Ordinal);
                     }
                     if (result != 0)
                     {

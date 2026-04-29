@@ -716,11 +716,11 @@ namespace CSVSplitter.Commands
             return indexes;
         }
 
-        private IDictionary<string, object> ReadCurrentRecordAsDictionary(CsvReader csv)
+        private IDictionary<string, string> ReadCurrentRecordAsDictionary(CsvReader csv)
         {
             var header = csv.HeaderRecord ?? Array.Empty<string>();
             var record = csv.Parser.Record ?? Array.Empty<string>();
-            var data = new Dictionary<string, object>(header.Length, StringComparer.Ordinal);
+            var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
             for (int i = 0; i < header.Length; i++)
             {
                 var key = header[i] ?? string.Empty;
@@ -986,12 +986,12 @@ namespace CSVSplitter.Commands
         private CsvConfiguration _csvConfig { get; set; }
         private Encoding _encoding;
         private string _filePath;
-        private IDictionary<string, object> _currentRecord;
+        private IDictionary<string, string> _currentRecord;
         private SortKey[] _currentSortKeys;
         private bool _isSortKeySet;
         private bool _isHeaderInitialized;
         private string _rawRecord;
-        public IDictionary<string, object> CurrentRecord
+        public IDictionary<string, string> CurrentRecord
         {
             get
             {
@@ -1110,11 +1110,11 @@ namespace CSVSplitter.Commands
             this._isSortKeySet = true;
         }
 
-        private static IDictionary<string, object> ReadCurrentRecordAsDictionary(CsvReader csv)
+        private static IDictionary<string, string> ReadCurrentRecordAsDictionary(CsvReader csv)
         {
             var header = csv.HeaderRecord ?? Array.Empty<string>();
             var record = csv.Parser.Record ?? Array.Empty<string>();
-            var data = new Dictionary<string, object>(header.Length, StringComparer.Ordinal);
+            var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
             for (int i = 0; i < header.Length; i++)
             {
                 var key = header[i] ?? string.Empty;

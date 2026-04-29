@@ -14,7 +14,7 @@ namespace CSVSplitter.Models
         }
 
         public string RawData { get; set; }
-        public IDictionary<string, object> Data { get; set; }
+        public IDictionary<string, string> Data { get; set; }
         public SortKey[] SortKeyArray { get; set; }
         public bool isSettedKey { get; set; } = false;
         public void SetSortKey(SortComparer comp)
