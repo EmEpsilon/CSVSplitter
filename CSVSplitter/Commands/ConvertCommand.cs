@@ -988,6 +988,7 @@ namespace CSVSplitter.Commands
         private string _filePath;
         private IDictionary<string, string> _currentRecord;
         private string[] _currentRecordValues;
+        private string[] _currentHeader;
         private SortKey[] _currentSortKeys;
         private bool _isSortKeySet;
         private bool _isHeaderInitialized;
@@ -998,6 +999,10 @@ namespace CSVSplitter.Commands
         {
             get
             {
+                if (this._currentRecord == null && this._currentRecordValues != null)
+                {
+                    this._currentRecord = ReadCurrentRecordAsDictionary();
+                }
                 return this._currentRecord;
             }
         }
@@ -1079,6 +1084,7 @@ namespace CSVSplitter.Commands
                 if (await this._csvReader.ReadAsync())
                 {
                     this._csvReader.ReadHeader();
+                    this._currentHeader = this._csvReader.HeaderRecord ?? Array.Empty<string>();
                 }
                 _isHeaderInitialized = true;
             }
@@ -1087,7 +1093,7 @@ namespace CSVSplitter.Commands
             if (rtn)
             {
                 this._currentRecordValues = this._csvReader.Parser.Record;
-                this._currentRecord = ReadCurrentRecordAsDictionary(this._csvReader);
+                this._currentRecord = null;
                 this._rawRecord = this._csvReader.Context.Parser.RawRecord;
                 this._currentSortKeys = null;
                 this._isSortKeySet = false;
@@ -1106,7 +1112,7 @@ namespace CSVSplitter.Commands
 
         public void SetSortKeys(SortComparer comparer)
         {
-            if (comparer is null || comparer.isEmpty() || this._currentRecord is null)
+            if (comparer is null || comparer.isEmpty() || this._currentRecordValues is null)
             {
                 this._currentSortKeys = null;
                 this._isSortKeySet = false;
@@ -1125,7 +1131,7 @@ namespace CSVSplitter.Commands
         {
             if (this._headerIndexes.Count == 0)
             {
-                var header = this._csvReader.HeaderRecord ?? Array.Empty<string>();
+                var header = this._currentHeader ?? this._csvReader.HeaderRecord ?? Array.Empty<string>();
                 for (int i = 0; i < header.Length; i++)
                 {
                     var key = header[i] ?? string.Empty;
@@ -1149,6 +1155,20 @@ namespace CSVSplitter.Commands
         {
             var header = csv.HeaderRecord ?? Array.Empty<string>();
             var record = csv.Parser.Record ?? Array.Empty<string>();
+            var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
+            for (int i = 0; i < header.Length; i++)
+            {
+                var key = header[i] ?? string.Empty;
+                var value = i < record.Length ? record[i] : null;
+                data[key] = value;
+            }
+            return data;
+        }
+
+        private IDictionary<string, string> ReadCurrentRecordAsDictionary()
+        {
+            var header = this._currentHeader ?? Array.Empty<string>();
+            var record = this._currentRecordValues ?? Array.Empty<string>();
             var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
             for (int i = 0; i < header.Length; i++)
             {
