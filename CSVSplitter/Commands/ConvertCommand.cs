@@ -1152,10 +1152,7 @@ namespace CSVSplitter.Commands
                 for (int i = 0; i < header.Length; i++)
                 {
                     var key = header[i] ?? string.Empty;
-                    if (!this._headerIndexes.ContainsKey(key))
-                    {
-                        this._headerIndexes[key] = i;
-                    }
+                    this._headerIndexes.TryAdd(key, i);
                 }
             }
 
