@@ -572,7 +572,7 @@ namespace CSVSplitter.Commands
             var baseFileName = Path.GetFileNameWithoutExtension(outputFile);
             var extention = Path.GetExtension(outputFile);
             var outputFolder = Directory.GetParent(outputFile).FullName;
-            var outputByHeader = new Dictionary<string, CCOutput>(StringComparer.Ordinal);
+            var outputByHeader = new Dictionary<SplitRoutingKey, CCOutput>(SplitRoutingKeyComparer.Instance);
             var splitHeaderCount = ccSplitInfo.Headers.Count;
             var splitHeaders = ccSplitInfo.Headers.ToArray();
 
@@ -609,7 +609,7 @@ namespace CSVSplitter.Commands
                             var index = splitHeaderIndexes[i];
                             headerData[i] = (index >= 0 && index < record.Length) ? record[index] ?? string.Empty : string.Empty;
                         }
-                        var headerKey = BuildSplitRoutingKey(headerData);
+                        var headerKey = new SplitRoutingKey(headerData);
                         if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
                         {
                             // Create new output file
@@ -682,19 +682,6 @@ namespace CSVSplitter.Commands
         {
             EnsureOutputPathSetInitialized(outputFiles);
             return GetOutputFilePath(baseFileName, extention, outputFolder);
-        }
-
-        private string BuildSplitRoutingKey(string[] headerData)
-        {
-            var builder = new StringBuilder(headerData.Length * 8);
-            foreach (var item in headerData)
-            {
-                var value = item ?? string.Empty;
-                builder.Append(value.Length);
-                builder.Append(':');
-                builder.Append(value);
-            }
-            return builder.ToString();
         }
 
         private int[] ResolveSplitHeaderIndexes(string[] headerRecord, string[] splitHeaders)
@@ -819,6 +806,53 @@ namespace CSVSplitter.Commands
         public CsvConfiguration CsvConfig { get; set; }
         public string RawHeader { get; set; }
         public string originalFilePath { get; set; }
+    }
+
+    internal readonly struct SplitRoutingKey
+    {
+        public readonly string[] Values;
+        public readonly int HashCode;
+
+        public SplitRoutingKey(string[] values)
+        {
+            Values = values ?? Array.Empty<string>();
+            unchecked
+            {
+                var hash = 17;
+                for (int i = 0; i < Values.Length; i++)
+                {
+                    hash = (hash * 31) + StringComparer.Ordinal.GetHashCode(Values[i] ?? string.Empty);
+                }
+                HashCode = hash;
+            }
+        }
+    }
+
+    internal sealed class SplitRoutingKeyComparer : IEqualityComparer<SplitRoutingKey>
+    {
+        public static readonly SplitRoutingKeyComparer Instance = new SplitRoutingKeyComparer();
+        private SplitRoutingKeyComparer() { }
+
+        public bool Equals(SplitRoutingKey x, SplitRoutingKey y)
+        {
+            if (x.Values.Length != y.Values.Length)
+            {
+                return false;
+            }
+            for (int i = 0; i < x.Values.Length; i++)
+            {
+                if (!StringComparer.Ordinal.Equals(x.Values[i] ?? string.Empty, y.Values[i] ?? string.Empty))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public int GetHashCode(SplitRoutingKey obj)
+        {
+            return obj.HashCode;
+        }
     }
 
     internal class CCInputPriorityComparer : IComparer<CCInput>
