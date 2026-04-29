@@ -59,6 +59,205 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task CountCsvFileAsync_ヘッダーを除いたデータ行数を返すこと()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "count_input.csv",
+                "Id,Name",
+                new[]
+                {
+                    "1,Alice",
+                    "2,Bob",
+                    "3,Carol"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeCountCsvFileAsync(command, input, inputFile.GetCsvConfig());
+
+            Assert.Equal(3, count);
+        }
+
+        [Fact]
+        public async Task EstimateCsvFileRecordsAsync_改行終端とヘッダー有無を考慮して推定できること()
+        {
+            using var env = new TestEnvironment();
+            var withHeader = env.CreateCsv(
+                "estimate_with_header.csv",
+                "Id,Name",
+                new[] { "1,Alice", "2,Bob", "3,Carol" },
+                new UTF8Encoding(false));
+
+            var withoutTrailingNewLine = env.Path("estimate_no_trailing_newline.csv");
+            File.WriteAllText(withoutTrailingNewLine, "Id,Name\r\n1,Alice\r\n2,Bob", new UTF8Encoding(false));
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var withHeaderInput = Analyze(withHeader);
+            var withHeaderEstimate = await InvokeEstimateCsvFileRecordsAsync(command, withHeader, withHeaderInput.GetCsvConfig());
+            Assert.Equal(3, withHeaderEstimate);
+
+            var configNoHeader = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = ",",
+                Encoding = new UTF8Encoding(false),
+                NewLine = "\r\n",
+                HasHeaderRecord = false,
+            };
+            var noTrailingEstimate = await InvokeEstimateCsvFileRecordsAsync(command, withoutTrailingNewLine, configNoHeader);
+            Assert.Equal(3, noTrailingEstimate);
+        }
+
+        [Fact]
+        public async Task EstimateCsvFileRecordsAsync_空ファイルとヘッダーのみファイルを推定できること()
+        {
+            using var env = new TestEnvironment();
+            var empty = env.Path("empty.csv");
+            File.WriteAllText(empty, string.Empty, new UTF8Encoding(false));
+
+            var headerOnly = env.Path("header_only.csv");
+            File.WriteAllText(headerOnly, "Id,Name\r\n", new UTF8Encoding(false));
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var configWithHeader = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = ",",
+                Encoding = new UTF8Encoding(false),
+                NewLine = "\r\n",
+                HasHeaderRecord = true,
+            };
+
+            var emptyEstimated = await InvokeEstimateCsvFileRecordsAsync(command, empty, configWithHeader);
+            var headerOnlyEstimated = await InvokeEstimateCsvFileRecordsAsync(command, headerOnly, configWithHeader);
+
+            Assert.Equal(0, emptyEstimated);
+            Assert.Equal(0, headerOnlyEstimated);
+        }
+
+        [Fact]
+        public async Task EstimateCsvFileRecordsAsync_引用符内改行がある場合は推定値が実測値以上になりうること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("estimate_with_quoted_newline.csv");
+            var content = "Id,Note\r\n1,\"A\r\nB\"\r\n2,\"C\"\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var command = CreateCommandForPrivateMethods(out _);
+            var estimated = await InvokeEstimateCsvFileRecordsAsync(command, inputPath, inputFile.GetCsvConfig());
+            var actual = await InvokeCountCsvFileAsync(command, inputPath, inputFile.GetCsvConfig());
+
+            Assert.Equal(2, actual);
+            Assert.True(estimated >= actual);
+        }
+
+        [Fact]
+        public void ReconcileTotalRecords_推定値から実測値へ一度だけ補正できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            SetPrivateField(command, "DicEstimatedCsvFile", new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["a.csv"] = 100,
+                ["b.csv"] = 150,
+            });
+            SetPrivateField(command, "ReconciledFiles", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            var corrected = InvokeReconcileTotalRecords(command, 250, 240, new[] { "a.csv", "b.csv" });
+            Assert.Equal(240, corrected);
+
+            var correctedAgain = InvokeReconcileTotalRecords(command, corrected, 240, new[] { "a.csv", "b.csv" });
+            Assert.Equal(240, correctedAgain);
+        }
+
+        [Fact]
+        public void ReconcileTotalRecords_一部ファイルのみ補正した後に残りを補正できること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            SetPrivateField(command, "DicEstimatedCsvFile", new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["a.csv"] = 100,
+                ["b.csv"] = 150,
+                ["c.csv"] = 200,
+            });
+            SetPrivateField(command, "ReconciledFiles", new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            var afterA = InvokeReconcileTotalRecords(command, 450, 90, new[] { "a.csv" });
+            Assert.Equal(440, afterA); // 450 - 100 + 90
+
+            var afterBC = InvokeReconcileTotalRecords(command, afterA, 320, new[] { "b.csv", "c.csv" });
+            Assert.Equal(410, afterBC); // 440 - (150+200) + 320
+        }
+
+        [Fact]
+        public void UpdateProgressStatus_総量差し替え後も進捗値が範囲内に収まること()
+        {
+            var vm = new MainWindowViewModel();
+            var progress = new UpdateProgressStatus(vm);
+
+            progress.SetTotalAmount(1000);
+            progress.SetCount(500);
+            progress.SetTotalAmount(800);
+            progress.SetCount(700);
+
+            Assert.InRange(vm.ProgressValue, 0, 100);
+        }
+
+        [Fact]
+        public void SortRows_しきい値未満は同一リストをインプレースソートすること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+
+            var rows = new List<SortCsvRow>
+            {
+                CreateRow(("Id", "3")),
+                CreateRow(("Id", "1")),
+                CreateRow(("Id", "2")),
+            };
+            rows.ForEach(r => r.SetSortKey(comparer));
+
+            var sorted = InvokeSortRows(command, rows, comparer);
+
+            Assert.Same(rows, sorted);
+            Assert.Equal(new[] { "1", "2", "3" }, sorted.Select(r => r.Data["Id"]?.ToString()).ToArray());
+        }
+
+        [Fact]
+        public void SortRows_しきい値以上は別リストを返してソートすること()
+        {
+            var command = CreateCommandForPrivateMethods(out _);
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+            var threshold = InvokeResolveParallelSortThreshold();
+            Assert.True(threshold >= 2);
+
+            var rowCount = threshold == int.MaxValue ? 10_000 : threshold;
+            var rows = Enumerable.Range(1, rowCount)
+                .Select(i => CreateRow(("Id", (rowCount - i + 1).ToString(CultureInfo.InvariantCulture))))
+                .ToList();
+            rows.ForEach(r => r.SetSortKey(comparer));
+
+            var sorted = InvokeSortRows(command, rows, comparer);
+
+            if (threshold == int.MaxValue)
+            {
+                Assert.Same(rows, sorted);
+            }
+            else
+            {
+                Assert.NotSame(rows, sorted);
+            }
+            Assert.Equal("1", sorted.First().Data["Id"]?.ToString());
+            Assert.Equal(rowCount.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
+        }
+
+        [Fact]
         public async Task OutputCsvFileAsync_行数上限で分割されること()
         {
             using var env = new TestEnvironment();
@@ -91,6 +290,37 @@ namespace CSVSplitter.Tests
 
             var recordsPerFile = files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray();
             Assert.Equal(new[] { 1, 1, 1, 1, 1 }, recordsPerFile);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_ダブルクォートを含む値でも分割キーを取得できること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "quoted_split_input.csv",
+                "Group,Name",
+                new[]
+                {
+                    "\"A,1\",Alice",
+                    "\"A,1\",Bob",
+                    "\"B,2\",Carol"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("quoted_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var filesA = Directory.GetFiles(env.Root, "quoted_result_A,1_*.csv").OrderBy(f => f).ToList();
+            var filesB = Directory.GetFiles(env.Root, "quoted_result_B,2_*.csv").OrderBy(f => f).ToList();
+            Assert.Single(filesA);
+            Assert.Single(filesB);
         }
 
         [Fact]
@@ -137,6 +367,71 @@ namespace CSVSplitter.Tests
                 .SelectMany(path => ReadAllLines(path, file1.Encoding).Skip(1))
                 .ToArray();
             Assert.Equal(new[] { "A,1,10", "A,2,20", "A,3,30" }, groupARecords);
+        }
+
+        [Fact]
+        public async Task MergeCsvFileAsync_複数入力をキー順にマージできること()
+        {
+            using var env = new TestEnvironment();
+            var part1 = Analyze(env.CreateCsv("merge_part1.csv", "Id,Name", new[] { "1,A", "4,D", "7,G" }, new UTF8Encoding(false)));
+            var part2 = Analyze(env.CreateCsv("merge_part2.csv", "Id,Name", new[] { "2,B", "5,E", "8,H" }, new UTF8Encoding(false)));
+            var part3 = Analyze(env.CreateCsv("merge_part3.csv", "Id,Name", new[] { "3,C", "6,F", "9,I" }, new UTF8Encoding(false)));
+
+            var output = env.Path("merged_heap.csv");
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("Id", false, true)
+            });
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await command.MergeCsvFileAsync(
+                new List<string> { part1.FilePath, part2.FilePath, part3.FilePath },
+                output,
+                part1.GetCsvConfig(),
+                comparer,
+                part1.RawHeader);
+
+            Assert.Equal(9, count);
+            var rows = ReadAllLines(output, part1.Encoding).Skip(1).ToArray();
+            Assert.Equal(
+                new[] { "1,A", "2,B", "3,C", "4,D", "5,E", "6,F", "7,G", "8,H", "9,I" },
+                rows);
+        }
+
+        [Fact]
+        public async Task MergeCsvFileAsync_引用符内改行を含むデータもキー順でマージできること()
+        {
+            using var env = new TestEnvironment();
+            var p1 = env.Path("merge_multiline1.csv");
+            var p2 = env.Path("merge_multiline2.csv");
+            File.WriteAllText(p1, "Id,Note\r\n1,\"A1\r\nA2\"\r\n3,\"C\"\r\n", new UTF8Encoding(false));
+            File.WriteAllText(p2, "Id,Note\r\n2,\"B1\r\nB2\"\r\n4,\"D\"\r\n", new UTF8Encoding(false));
+
+            var f1 = Analyze(p1);
+            var f2 = Analyze(p2);
+            var output = env.Path("merge_multiline_out.csv");
+            var comparer = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+
+            var count = await command.MergeCsvFileAsync(new List<string> { f1.FilePath, f2.FilePath }, output, f1.GetCsvConfig(), comparer, f1.RawHeader);
+            Assert.Equal(4, count);
+
+            using var reader = new StreamReader(output, f1.Encoding);
+            using var csv = new CsvReader(reader, f1.GetCsvConfig());
+            var ids = new List<string>();
+            var notes = new List<string>();
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
+            while (await csv.ReadAsync())
+            {
+                ids.Add(csv.GetField("Id"));
+                notes.Add(csv.GetField("Note"));
+            }
+            Assert.Equal(new[] { "1", "2", "3", "4" }, ids);
+            Assert.Equal("A1\r\nA2", notes[0]);
+            Assert.Equal("B1\r\nB2", notes[1]);
         }
 
         [Fact]
@@ -200,6 +495,33 @@ namespace CSVSplitter.Tests
             Assert.Equal("alice", rows[0].Data["Name"]);
             Assert.Equal("Bob", rows[1].Data["Name"]);
             Assert.Equal("Alice", rows[2].Data["Name"]);
+        }
+
+        [Fact]
+        public async Task SortCsvFileAsync_存在しないソート列を指定しても例外にならないこと()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "missing_sort_column.csv",
+                "Id,Name",
+                new[]
+                {
+                    "2,Bob",
+                    "1,Alice"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var output = env.Path("missing_sort_column_out.csv");
+            var comparer = new SortComparer(new List<SortOption>
+            {
+                new SortOption("NotFoundColumn", false, false),
+                new SortOption("Id", false, true),
+            });
+
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeSortCsvFileAsync(command, input, output, inputFile.GetCsvConfig(), comparer, inputFile.RawHeader, 1000);
+            Assert.Equal(2, count);
         }
 
         [Theory]
@@ -303,6 +625,43 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task SortCsvFileAsync_引用符内改行とカンマを含むセルを保持できること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("quoted_multiline.csv");
+            var content = "Id,Note\r\n2,\"line1\r\nline2,with comma\"\r\n1,\"single line\"\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var output = env.Path("quoted_multiline_sorted.csv");
+            var comparer = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeSortCsvFileAsync(command, inputPath, output, inputFile.GetCsvConfig(), comparer, inputFile.RawHeader, 1000);
+            Assert.Equal(2, count);
+
+            using var reader = new StreamReader(output, inputFile.Encoding);
+            using var csv = new CsvReader(reader, inputFile.GetCsvConfig());
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
+            var rows = new List<Dictionary<string, string>>();
+            while (await csv.ReadAsync())
+            {
+                rows.Add(new Dictionary<string, string>
+                {
+                    ["Id"] = csv.GetField("Id"),
+                    ["Note"] = csv.GetField("Note")
+                });
+            }
+
+            Assert.Equal("1", rows[0]["Id"]);
+            Assert.Equal("single line", rows[0]["Note"]);
+            Assert.Equal("2", rows[1]["Id"]);
+            Assert.Equal("line1\r\nline2,with comma", rows[1]["Note"]);
+        }
+
+        [Fact]
         public async Task OutputCsvFileAsync_複数分割キーで正しく分割できること()
         {
             using var env = new TestEnvironment();
@@ -330,6 +689,63 @@ namespace CSVSplitter.Tests
 
             var files = Directory.GetFiles(env.Root, "out_*_*.csv").Select(System.IO.Path.GetFileName).OrderBy(x => x).ToArray();
             Assert.Equal(new[] { "out_A_X_1.csv", "out_A_Y_1.csv", "out_B_X_1.csv" }, files);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_引用符とエスケープを含むキーで分割できること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("quoted_escape_split.csv");
+            var content =
+                "Group,Type,Id\r\n" +
+                "\"A,1\",\"X\"\"Y\",1\r\n" +
+                "\"A,1\",\"X\"\"Y\",2\r\n" +
+                "\"B,2\",\"Q\"\"R\",3\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var outputBase = env.Path("quoted_escape_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+            splitInfo.AddHeader("Type");
+
+            var count = await InvokeOutputCsvFileAsync(command, inputPath, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var filesA = Directory.GetFiles(env.Root, "quoted_escape_result_A,1_X*Y_*.csv");
+            var filesB = Directory.GetFiles(env.Root, "quoted_escape_result_B,2_Q*R_*.csv");
+            Assert.Single(filesA);
+            Assert.Single(filesB);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_分割キー列が存在しない場合は空キーとして処理できること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "missing_split_header.csv",
+                "Group,Id",
+                new[]
+                {
+                    "A,1",
+                    "B,2"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("missing_split_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("NotFound");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(2, count);
+
+            var files = Directory.GetFiles(env.Root, "missing_split_result_*.csv");
+            Assert.Single(files);
         }
 
         [Fact]
@@ -458,11 +874,22 @@ namespace CSVSplitter.Tests
             using var reader = new StreamReader(output, inputFile.Encoding);
             using var csv = new CsvReader(reader, inputFile.GetCsvConfig());
             SortCsvRow previous = null;
+            if (await csv.ReadAsync())
+            {
+                csv.ReadHeader();
+            }
             while (await csv.ReadAsync())
             {
+                var header = csv.HeaderRecord ?? Array.Empty<string>();
+                var record = csv.Parser.Record ?? Array.Empty<string>();
+                var data = new Dictionary<string, string>(header.Length, StringComparer.Ordinal);
+                for (int i = 0; i < header.Length; i++)
+                {
+                    data[header[i]] = i < record.Length ? record[i] : null;
+                }
                 var now = new SortCsvRow
                 {
-                    Data = csv.GetRecord<dynamic>() as IDictionary<string, object>
+                    Data = data
                 };
                 now.SetSortKey(comparer);
                 if (previous != null)
@@ -477,7 +904,7 @@ namespace CSVSplitter.Tests
         {
             var row = new SortCsvRow
             {
-                Data = pairs.ToDictionary(p => p.Key, p => (object)p.Value)
+                Data = pairs.ToDictionary(p => p.Key, p => p.Value)
             };
             return row;
         }
@@ -505,6 +932,46 @@ namespace CSVSplitter.Tests
             var method = typeof(ConvertCommand).GetMethod("OutputCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             var task = (Task<long>)method.Invoke(command, new object[] { inputFile, outputFile, config, splitInfo, rawHeader });
             return await task;
+        }
+
+        private static async Task<long> InvokeCountCsvFileAsync(ConvertCommand command, string inputFile, CsvConfiguration config)
+        {
+            var method = typeof(ConvertCommand).GetMethod("CountCsvFileAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+            var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
+            return await task;
+        }
+
+        private static async Task<long> InvokeEstimateCsvFileRecordsAsync(ConvertCommand command, string inputFile, CsvConfiguration config)
+        {
+            var method = typeof(ConvertCommand).GetMethod("EstimateCsvFileRecordsAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+            var task = (Task<long>)method.Invoke(command, new object[] { inputFile, config });
+            return await task;
+        }
+
+        private static long InvokeReconcileTotalRecords(ConvertCommand command, long estimatedTotalRecords, long actualRecords, IEnumerable<string> files)
+        {
+            var method = typeof(ConvertCommand).GetMethod("ReconcileTotalRecords", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (long)method.Invoke(command, new object[] { estimatedTotalRecords, actualRecords, files });
+        }
+
+        private static List<SortCsvRow> InvokeSortRows(ConvertCommand command, List<SortCsvRow> rows, SortComparer comparer)
+        {
+            var method = typeof(ConvertCommand).GetMethod("SortRows", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (List<SortCsvRow>)method.Invoke(command, new object[] { rows, comparer });
+        }
+
+        private static int InvokeResolveParallelSortThreshold()
+        {
+            var method = typeof(ConvertCommand).GetMethod(
+                "ResolveParallelSortThreshold",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            if (method == null)
+            {
+                throw new MissingMethodException(typeof(ConvertCommand).FullName, "ResolveParallelSortThreshold");
+            }
+
+            return (int)method.Invoke(null, null);
         }
 
         private static void SetPrivateField(object instance, string fieldName, object value)

@@ -19,7 +19,7 @@ namespace CSVSplitter.Models
             return CompareCore(x.Data, y.Data, x.SortKeyArray, y.SortKeyArray, x.isSettedKey, y.isSettedKey);
         }
 
-        public SortKey[] BuildSortKeys(IDictionary<string, object> data)
+        public SortKey[] BuildSortKeys(IDictionary<string, string> data)
         {
             if (this.Options.Count == 0)
             {
@@ -30,11 +30,14 @@ namespace CSVSplitter.Models
             for (int i = 0; i < this.Options.Count; i++)
             {
                 var option = this.Options[i];
+                if (!data.TryGetValue(option.ColName, out var valueText))
+                {
+                    valueText = null;
+                }
                 SortKey key = new SortKey();
                 if (option.IsNumeric)
                 {
-                    double num;
-                    if (!double.TryParse(data[option.ColName]?.ToString(), out num))
+                    if (!double.TryParse(valueText, out var num))
                     {
                         num = 0;
                     }
@@ -42,7 +45,41 @@ namespace CSVSplitter.Models
                 }
                 else
                 {
-                    key.obj = data[option.ColName]?.ToString() ?? "";
+                    key.obj = valueText ?? "";
+                }
+                sortKeys[i] = key;
+            }
+            return sortKeys;
+        }
+
+        public SortKey[] BuildSortKeys(string[] recordValues, int[] optionIndexes)
+        {
+            if (this.Options.Count == 0)
+            {
+                return Array.Empty<SortKey>();
+            }
+
+            var sortKeys = new SortKey[this.Options.Count];
+            for (int i = 0; i < this.Options.Count; i++)
+            {
+                var option = this.Options[i];
+                var columnIndex = (optionIndexes != null && i < optionIndexes.Length) ? optionIndexes[i] : -1;
+                var valueText = (recordValues != null && columnIndex >= 0 && columnIndex < recordValues.Length)
+                    ? recordValues[columnIndex]
+                    : null;
+
+                SortKey key = new SortKey();
+                if (option.IsNumeric)
+                {
+                    if (!double.TryParse(valueText, out var num))
+                    {
+                        num = 0;
+                    }
+                    key.num = num;
+                }
+                else
+                {
+                    key.obj = valueText ?? "";
                 }
                 sortKeys[i] = key;
             }
@@ -50,10 +87,10 @@ namespace CSVSplitter.Models
         }
 
         public int CompareRecords(
-            IDictionary<string, object> xData,
+            IDictionary<string, string> xData,
             SortKey[] xSortKeys,
             bool xHasSortKeys,
-            IDictionary<string, object> yData,
+            IDictionary<string, string> yData,
             SortKey[] ySortKeys,
             bool yHasSortKeys)
         {
@@ -61,8 +98,8 @@ namespace CSVSplitter.Models
         }
 
         private int CompareCore(
-            IDictionary<string, object> xData,
-            IDictionary<string, object> yData,
+            IDictionary<string, string> xData,
+            IDictionary<string, string> yData,
             SortKey[] xSortKeys,
             SortKey[] ySortKeys,
             bool xHasSortKeys,
@@ -93,11 +130,13 @@ namespace CSVSplitter.Models
                     {
                         double tmp1;
                         double tmp2;
-                        if (!double.TryParse(xData[option.ColName]?.ToString(), out tmp1))
+                        var xValue = GetValueOrNull(xData, option.ColName);
+                        var yValue = GetValueOrNull(yData, option.ColName);
+                        if (!double.TryParse(xValue, out tmp1))
                         {
                             tmp1 = 0;
                         }
-                        if (!double.TryParse(yData[option.ColName]?.ToString(), out tmp2))
+                        if (!double.TryParse(yValue, out tmp2))
                         {
                             tmp2 = 0;
                         }
@@ -105,7 +144,9 @@ namespace CSVSplitter.Models
                     }
                     else
                     {
-                        result = String.Compare(xData[option.ColName]?.ToString(), yData[option.ColName]?.ToString(), StringComparison.Ordinal);
+                        var xValue = GetValueOrNull(xData, option.ColName);
+                        var yValue = GetValueOrNull(yData, option.ColName);
+                        result = String.Compare(xValue, yValue, StringComparison.Ordinal);
                     }
                     if (result != 0)
                     {
@@ -119,6 +160,16 @@ namespace CSVSplitter.Models
         public bool isEmpty()
         {
             return this.Options.Count == 0;
+        }
+
+        private static string GetValueOrNull(IDictionary<string, string> data, string key)
+        {
+            if (data == null)
+            {
+                return null;
+            }
+            var safeKey = key ?? string.Empty;
+            return data.TryGetValue(safeKey, out var value) ? value : null;
         }
     }
 
