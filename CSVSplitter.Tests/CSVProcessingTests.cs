@@ -237,16 +237,24 @@ namespace CSVSplitter.Tests
             var threshold = InvokeResolveParallelSortThreshold();
             Assert.True(threshold >= 2);
 
-            var rows = Enumerable.Range(1, threshold)
-                .Select(i => CreateRow(("Id", (threshold - i + 1).ToString(CultureInfo.InvariantCulture))))
+            var rowCount = threshold == int.MaxValue ? 10_000 : threshold;
+            var rows = Enumerable.Range(1, rowCount)
+                .Select(i => CreateRow(("Id", (rowCount - i + 1).ToString(CultureInfo.InvariantCulture))))
                 .ToList();
             rows.ForEach(r => r.SetSortKey(comparer));
 
             var sorted = InvokeSortRows(command, rows, comparer);
 
-            Assert.NotSame(rows, sorted);
+            if (threshold == int.MaxValue)
+            {
+                Assert.Same(rows, sorted);
+            }
+            else
+            {
+                Assert.NotSame(rows, sorted);
+            }
             Assert.Equal("1", sorted.First().Data["Id"]?.ToString());
-            Assert.Equal(threshold.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
+            Assert.Equal(rowCount.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
         }
 
         [Fact]
