@@ -987,9 +987,12 @@ namespace CSVSplitter.Commands
         private Encoding _encoding;
         private string _filePath;
         private IDictionary<string, string> _currentRecord;
+        private string[] _currentRecordValues;
         private SortKey[] _currentSortKeys;
         private bool _isSortKeySet;
         private bool _isHeaderInitialized;
+        private Dictionary<string, int> _headerIndexes;
+        private int[] _sortOptionIndexes;
         private string _rawRecord;
         public IDictionary<string, string> CurrentRecord
         {
@@ -1041,6 +1044,7 @@ namespace CSVSplitter.Commands
             this._reader = new StreamReader(prmFilePath, this._encoding);
             this._csvReader = new CsvReader(this._reader,this._csvConfig);
             this._isHeaderInitialized = false;
+            this._headerIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
         }
         private bool _closed = false;
         public bool Closed
@@ -1082,6 +1086,7 @@ namespace CSVSplitter.Commands
             bool rtn = await this._csvReader.ReadAsync();
             if (rtn)
             {
+                this._currentRecordValues = this._csvReader.Parser.Record;
                 this._currentRecord = ReadCurrentRecordAsDictionary(this._csvReader);
                 this._rawRecord = this._csvReader.Context.Parser.RawRecord;
                 this._currentSortKeys = null;
@@ -1091,6 +1096,7 @@ namespace CSVSplitter.Commands
             else
             {
                 this._currentRecord = null;
+                this._currentRecordValues = null;
                 this._rawRecord = null;
                 this._currentSortKeys = null;
                 this._isSortKeySet = false;
@@ -1106,8 +1112,37 @@ namespace CSVSplitter.Commands
                 this._isSortKeySet = false;
                 return;
             }
-            this._currentSortKeys = comparer.BuildSortKeys(this._currentRecord);
+
+            if (this._sortOptionIndexes == null)
+            {
+                this._sortOptionIndexes = ResolveSortOptionIndexes(comparer);
+            }
+            this._currentSortKeys = comparer.BuildSortKeys(this._currentRecordValues, this._sortOptionIndexes);
             this._isSortKeySet = true;
+        }
+
+        private int[] ResolveSortOptionIndexes(SortComparer comparer)
+        {
+            if (this._headerIndexes.Count == 0)
+            {
+                var header = this._csvReader.HeaderRecord ?? Array.Empty<string>();
+                for (int i = 0; i < header.Length; i++)
+                {
+                    var key = header[i] ?? string.Empty;
+                    if (!this._headerIndexes.ContainsKey(key))
+                    {
+                        this._headerIndexes[key] = i;
+                    }
+                }
+            }
+
+            var indexes = new int[comparer.Options.Count];
+            for (int i = 0; i < comparer.Options.Count; i++)
+            {
+                var colName = comparer.Options[i].ColName ?? string.Empty;
+                indexes[i] = this._headerIndexes.TryGetValue(colName, out var index) ? index : -1;
+            }
+            return indexes;
         }
 
         private static IDictionary<string, string> ReadCurrentRecordAsDictionary(CsvReader csv)
