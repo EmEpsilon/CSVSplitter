@@ -994,6 +994,7 @@ namespace CSVSplitter.Commands
         private bool _isHeaderInitialized;
         private Dictionary<string, int> _headerIndexes;
         private int[] _sortOptionIndexes;
+        private SortComparer _sortOptionIndexSource;
         private string _rawRecord;
         public IDictionary<string, string> CurrentRecord
         {
@@ -1119,9 +1120,10 @@ namespace CSVSplitter.Commands
                 return;
             }
 
-            if (this._sortOptionIndexes == null)
+            if (this._sortOptionIndexes == null || !object.ReferenceEquals(this._sortOptionIndexSource, comparer))
             {
                 this._sortOptionIndexes = ResolveSortOptionIndexes(comparer);
+                this._sortOptionIndexSource = comparer;
             }
             this._currentSortKeys = comparer.BuildSortKeys(this._currentRecordValues, this._sortOptionIndexes);
             this._isSortKeySet = true;
