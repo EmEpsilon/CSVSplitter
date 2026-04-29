@@ -772,7 +772,8 @@ namespace CSVSplitter.Commands
                 return rows;
             }
 
-            if (rows.Count < Global.Const.PARALLEL_SORT_THRESHOLD)
+            var parallelSortThreshold = ResolveParallelSortThreshold();
+            if (rows.Count < parallelSortThreshold)
             {
                 rows.Sort(comparer);
                 return rows;
@@ -781,6 +782,26 @@ namespace CSVSplitter.Commands
             return rows.AsParallel()
                        .OrderBy(r => r, comparer)
                        .ToList();
+        }
+
+        private static int ResolveParallelSortThreshold()
+        {
+            var coreCount = Math.Max(Environment.ProcessorCount, 1);
+            if (coreCount <= 1)
+            {
+                return int.MaxValue;
+            }
+
+            var autoThreshold = coreCount * Global.Const.PARALLEL_SORT_THRESHOLD_PER_CORE;
+            if (autoThreshold < Global.Const.PARALLEL_SORT_THRESHOLD_MIN)
+            {
+                return Global.Const.PARALLEL_SORT_THRESHOLD_MIN;
+            }
+            if (autoThreshold > Global.Const.PARALLEL_SORT_THRESHOLD_MAX)
+            {
+                return Global.Const.PARALLEL_SORT_THRESHOLD_MAX;
+            }
+            return autoThreshold;
         }
 
     }
