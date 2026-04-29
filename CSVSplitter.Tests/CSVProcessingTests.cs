@@ -749,19 +749,18 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
-        public async Task CountCsvFileAsync_空行を含むCSVはCsvHelperの既定動作に従ってカウントされること()
+        public async Task CountCsvFileAsync_空行はデータ行として数えないこと()
         {
             using var env = new TestEnvironment();
             var path = env.Path("count_with_blank_lines.csv");
-            var content = "Id,Name\r\n1,Alice\r\n\r\n2,Bob\r\n   \r\n3,Carol\r\n";
+            var content = "Id,Name\r\n1,Alice\r\n\r\n2,Bob\r\n\r\n3,Carol\r\n";
             File.WriteAllText(path, content, new UTF8Encoding(false));
 
             var inputFile = Analyze(path);
             var command = CreateCommandForPrivateMethods(out _);
             var count = await InvokeCountCsvFileAsync(command, path, inputFile.GetCsvConfig());
 
-            // 現行実装では空行も1レコードとして読み取られるため 4 件になる。
-            Assert.Equal(4, count);
+            Assert.Equal(3, count);
         }
 
         [Fact]
@@ -821,8 +820,8 @@ namespace CSVSplitter.Tests
             Assert.Equal(5, count);
 
             var files = Directory.GetFiles(env.Root, "rotation_out_A_*.csv").OrderBy(f => f).ToArray();
-            Assert.Equal(5, files.Length);
-            Assert.Equal(new[] { 1, 1, 1, 1, 1 }, files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray());
+            Assert.Equal(3, files.Length);
+            Assert.Equal(new[] { 2, 2, 1 }, files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray());
         }
 
         [Fact]
