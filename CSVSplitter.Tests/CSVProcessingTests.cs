@@ -1036,7 +1036,7 @@ namespace CSVSplitter.Tests
             var asm = typeof(ConvertCommand).Assembly;
             var keyType = asm.GetType("CSVSplitter.Commands.SplitRoutingKey", throwOnError: true);
             var comparerType = asm.GetType("CSVSplitter.Commands.SplitRoutingKeyComparer", throwOnError: true);
-            var instance = comparerType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            var instance = comparerType.GetField("Instance", BindingFlags.Public | BindingFlags.Static).GetValue(null);
             var equalsMethod = comparerType.GetMethod("Equals", new[] { keyType, keyType });
 
             object CreateKey(params string[] values)
