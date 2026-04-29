@@ -266,6 +266,37 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task OutputCsvFileAsync_ダブルクォートを含む値でも分割キーを取得できること()
+        {
+            using var env = new TestEnvironment();
+            var input = env.CreateCsv(
+                "quoted_split_input.csv",
+                "Group,Name",
+                new[]
+                {
+                    "\"A,1\",Alice",
+                    "\"A,1\",Bob",
+                    "\"B,2\",Carol"
+                },
+                new UTF8Encoding(false));
+
+            var inputFile = Analyze(input);
+            var outputBase = env.Path("quoted_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+
+            var count = await InvokeOutputCsvFileAsync(command, input, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var filesA = Directory.GetFiles(env.Root, "quoted_result_A,1_*.csv").OrderBy(f => f).ToList();
+            var filesB = Directory.GetFiles(env.Root, "quoted_result_B,2_*.csv").OrderBy(f => f).ToList();
+            Assert.Single(filesA);
+            Assert.Single(filesB);
+        }
+
+        [Fact]
         public async Task 複数ファイル統合後にソートと分割が正常に動作すること()
         {
             using var env = new TestEnvironment();

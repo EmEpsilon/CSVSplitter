@@ -323,7 +323,7 @@ namespace CSVSplitter.Commands
                         while (await csv.ReadAsync())
                         {
                             var row = new Models.SortCsvRow();
-                            row.Data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
+                            row.Data = ReadCurrentRecordAsDictionary(csv);
                             row.RawData = csv.Context.Parser.RawRecord;
                             if (!row.RawData.EndsWith(config.NewLine))
                             {
@@ -366,7 +366,7 @@ namespace CSVSplitter.Commands
                         while (await csv.ReadAsync())
                         {
                             var row = new Models.SortCsvRow();
-                            row.Data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
+                            row.Data = ReadCurrentRecordAsDictionary(csv);
                             row.RawData = csv.Context.Parser.RawRecord;
                             if (!row.RawData.EndsWith(config.NewLine))
                             {
@@ -561,7 +561,6 @@ namespace CSVSplitter.Commands
                 {
                     while (await csv.ReadAsync())
                     {
-                        var data = csv.GetRecord<dynamic>() as IDictionary<string, object>;
                         var row = csv.Context.Parser.RawRecord;
                         if(!row.EndsWith(config.NewLine))
                         {
@@ -570,7 +569,11 @@ namespace CSVSplitter.Commands
                         var headerData = new string[splitHeaderCount];
                         for (int i = 0; i < splitHeaderCount; i++)
                         {
-                            headerData[i] = data[splitHeaders[i]]?.ToString() ?? string.Empty;
+                            if (!csv.TryGetField(splitHeaders[i], out string value))
+                            {
+                                value = string.Empty;
+                            }
+                            headerData[i] = value ?? string.Empty;
                         }
                         var headerKey = BuildSplitRoutingKey(headerData);
                         if (!outputByHeader.TryGetValue(headerKey, out var ccOutput))
@@ -696,6 +699,20 @@ namespace CSVSplitter.Commands
             return rows.AsParallel()
                        .OrderBy(r => r, comparer)
                        .ToList();
+        }
+
+        private IDictionary<string, object> ReadCurrentRecordAsDictionary(CsvReader csv)
+        {
+            var header = csv.HeaderRecord ?? Array.Empty<string>();
+            var record = csv.Parser.Record ?? Array.Empty<string>();
+            var data = new Dictionary<string, object>(header.Length, StringComparer.Ordinal);
+            for (int i = 0; i < header.Length; i++)
+            {
+                var key = header[i] ?? string.Empty;
+                string value = i < record.Length ? record[i] : null;
+                data[key] = value;
+            }
+            return data;
         }
     }
 
@@ -1000,7 +1017,7 @@ namespace CSVSplitter.Commands
             bool rtn = await this._csvReader.ReadAsync();
             if (rtn)
             {
-                this._currentRecord = this._csvReader.GetRecord<dynamic>() as IDictionary<string, object>;
+                this._currentRecord = ReadCurrentRecordAsDictionary(this._csvReader);
                 this._rawRecord = this._csvReader.Context.Parser.RawRecord;
                 this._currentSortKeys = null;
                 this._isSortKeySet = false;
@@ -1026,6 +1043,20 @@ namespace CSVSplitter.Commands
             }
             this._currentSortKeys = comparer.BuildSortKeys(this._currentRecord);
             this._isSortKeySet = true;
+        }
+
+        private static IDictionary<string, object> ReadCurrentRecordAsDictionary(CsvReader csv)
+        {
+            var header = csv.HeaderRecord ?? Array.Empty<string>();
+            var record = csv.Parser.Record ?? Array.Empty<string>();
+            var data = new Dictionary<string, object>(header.Length, StringComparer.Ordinal);
+            for (int i = 0; i < header.Length; i++)
+            {
+                var key = header[i] ?? string.Empty;
+                string value = i < record.Length ? record[i] : null;
+                data[key] = value;
+            }
+            return data;
         }
     }
 
