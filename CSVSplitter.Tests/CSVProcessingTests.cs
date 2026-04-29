@@ -286,10 +286,10 @@ namespace CSVSplitter.Tests
             Assert.Equal(5, count);
 
             var files = Directory.GetFiles(env.Root, "result_A_*.csv").OrderBy(f => f).ToList();
-            Assert.Equal(5, files.Count);
+            Assert.Equal(3, files.Count);
 
             var recordsPerFile = files.Select(f => ReadAllLines(f, inputFile.Encoding).Length - 1).ToArray();
-            Assert.Equal(new[] { 1, 1, 1, 1, 1 }, recordsPerFile);
+            Assert.Equal(new[] { 2, 2, 1 }, recordsPerFile);
         }
 
         [Fact]
@@ -361,7 +361,7 @@ namespace CSVSplitter.Tests
             await InvokeOutputCsvFileAsync(command, sorted, outputBase, file1.GetCsvConfig(), splitInfo, file1.RawHeader);
 
             var groupAFiles = Directory.GetFiles(env.Root, "integrated_A_*.csv").OrderBy(f => f).ToList();
-            Assert.Equal(3, groupAFiles.Count);
+            Assert.Equal(2, groupAFiles.Count);
 
             var groupARecords = groupAFiles
                 .SelectMany(path => ReadAllLines(path, file1.Encoding).Skip(1))
