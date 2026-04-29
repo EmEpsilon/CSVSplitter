@@ -316,6 +316,7 @@ namespace CSVSplitter.Commands
             else if (count <= maxSortFileRecords)
             {
                 var list = new List<Models.SortCsvRow>();
+                var sortHeaders = comp.Options.Select(o => o.ColName).ToArray();
                 using (var reader = new StreamReader(inputFile, config.Encoding))
                 {
                     using (var csv = new CsvReader(reader, config))
@@ -326,7 +327,7 @@ namespace CSVSplitter.Commands
                             if (await csv.ReadAsync())
                             {
                                 csv.ReadHeader();
-                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, comp.Options.Select(o => o.ColName).ToArray());
+                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, sortHeaders);
                             }
                         }
 
@@ -368,6 +369,7 @@ namespace CSVSplitter.Commands
 
                 int countTmp = 0;
                 var list = new List<Models.SortCsvRow>();
+                var sortHeaders = comp.Options.Select(o => o.ColName).ToArray();
                 using (var reader = new StreamReader(inputFile, config.Encoding))
                 {
                     using (var csv = new CsvReader(reader, config))
@@ -378,7 +380,7 @@ namespace CSVSplitter.Commands
                             if (await csv.ReadAsync())
                             {
                                 csv.ReadHeader();
-                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, comp.Options.Select(o => o.ColName).ToArray());
+                                sortHeaderIndexes = ResolveHeaderIndexes(csv.HeaderRecord, sortHeaders);
                             }
                         }
 
