@@ -1,9 +1,15 @@
-param(
+﻿param(
     [string]$Configuration = "Release",
     [int]$Repeat = 3
 )
 
 $ErrorActionPreference = "Stop"
+
+# 文字化け対策（Windows PowerShell / PowerShell 7 の双方で UTF-8 を明示）
+[Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding           = [System.Text.UTF8Encoding]::new($false)
+$env:DOTNET_CLI_UI_LANGUAGE = "ja-JP"
 
 if ($Repeat -lt 1) {
     throw "Repeat must be >= 1."
