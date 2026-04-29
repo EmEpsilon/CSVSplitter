@@ -1132,6 +1132,11 @@ namespace CSVSplitter.Commands
             {
                 this._currentSortKeys = null;
                 this._isSortKeySet = false;
+                if (comparer is null || comparer.isEmpty())
+                {
+                    this._sortOptionIndexes = null;
+                    this._sortOptionIndexSource = null;
+                }
                 return;
             }
 
