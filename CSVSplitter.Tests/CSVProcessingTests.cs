@@ -136,6 +136,23 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task EstimateCsvFileRecordsAsync_引用符内改行がある場合は推定値が実測値以上になりうること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("estimate_with_quoted_newline.csv");
+            var content = "Id,Note\r\n1,\"A\r\nB\"\r\n2,\"C\"\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var command = CreateCommandForPrivateMethods(out _);
+            var estimated = await InvokeEstimateCsvFileRecordsAsync(command, inputPath, inputFile.GetCsvConfig());
+            var actual = await InvokeCountCsvFileAsync(command, inputPath, inputFile.GetCsvConfig());
+
+            Assert.Equal(2, actual);
+            Assert.True(estimated >= actual);
+        }
+
+        [Fact]
         public void ReconcileTotalRecords_推定値から実測値へ一度だけ補正できること()
         {
             var command = CreateCommandForPrivateMethods(out _);
@@ -535,6 +552,39 @@ namespace CSVSplitter.Tests
         }
 
         [Fact]
+        public async Task SortCsvFileAsync_引用符内改行とカンマを含むセルを保持できること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("quoted_multiline.csv");
+            var content = "Id,Note\r\n2,\"line1\r\nline2,with comma\"\r\n1,\"single line\"\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var output = env.Path("quoted_multiline_sorted.csv");
+            var comparer = new SortComparer(new List<SortOption> { new SortOption("Id", false, true) });
+            var command = CreateCommandForPrivateMethods(out _);
+            var count = await InvokeSortCsvFileAsync(command, inputPath, output, inputFile.GetCsvConfig(), comparer, inputFile.RawHeader, 1000);
+            Assert.Equal(2, count);
+
+            using var reader = new StreamReader(output, inputFile.Encoding);
+            using var csv = new CsvReader(reader, inputFile.GetCsvConfig());
+            var rows = new List<Dictionary<string, string>>();
+            while (await csv.ReadAsync())
+            {
+                rows.Add(new Dictionary<string, string>
+                {
+                    ["Id"] = csv.GetField("Id"),
+                    ["Note"] = csv.GetField("Note")
+                });
+            }
+
+            Assert.Equal("1", rows[0]["Id"]);
+            Assert.Equal("single line", rows[0]["Note"]);
+            Assert.Equal("2", rows[1]["Id"]);
+            Assert.Equal("line1\r\nline2,with comma", rows[1]["Note"]);
+        }
+
+        [Fact]
         public async Task OutputCsvFileAsync_複数分割キーで正しく分割できること()
         {
             using var env = new TestEnvironment();
@@ -562,6 +612,35 @@ namespace CSVSplitter.Tests
 
             var files = Directory.GetFiles(env.Root, "out_*_*.csv").Select(System.IO.Path.GetFileName).OrderBy(x => x).ToArray();
             Assert.Equal(new[] { "out_A_X_1.csv", "out_A_Y_1.csv", "out_B_X_1.csv" }, files);
+        }
+
+        [Fact]
+        public async Task OutputCsvFileAsync_引用符とエスケープを含むキーで分割できること()
+        {
+            using var env = new TestEnvironment();
+            var inputPath = env.Path("quoted_escape_split.csv");
+            var content =
+                "Group,Type,Id\r\n" +
+                "\"A,1\",\"X\"\"Y\",1\r\n" +
+                "\"A,1\",\"X\"\"Y\",2\r\n" +
+                "\"B,2\",\"Q\"\"R\",3\r\n";
+            File.WriteAllText(inputPath, content, new UTF8Encoding(false));
+
+            var inputFile = Analyze(inputPath);
+            var outputBase = env.Path("quoted_escape_result.csv");
+            var command = CreateCommandForPrivateMethods(out var viewModel);
+            viewModel.MaxCsvRecords = 100;
+            var splitInfo = new CCSplitInfo();
+            splitInfo.AddHeader("Group");
+            splitInfo.AddHeader("Type");
+
+            var count = await InvokeOutputCsvFileAsync(command, inputPath, outputBase, inputFile.GetCsvConfig(), splitInfo, inputFile.RawHeader);
+            Assert.Equal(3, count);
+
+            var filesA = Directory.GetFiles(env.Root, "quoted_escape_result_A,1_X\"Y_*.csv");
+            var filesB = Directory.GetFiles(env.Root, "quoted_escape_result_B,2_Q\"R_*.csv");
+            Assert.Single(filesA);
+            Assert.Single(filesB);
         }
 
         [Fact]
