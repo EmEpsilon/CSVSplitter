@@ -30,15 +30,14 @@ namespace CSVSplitter.Models
             for (int i = 0; i < this.Options.Count; i++)
             {
                 var option = this.Options[i];
+                if (!data.TryGetValue(option.ColName, out var valueText))
+                {
+                    valueText = null;
+                }
                 SortKey key = new SortKey();
                 if (option.IsNumeric)
                 {
-                    double num;
-                    if (!data.TryGetValue(option.ColName, out var valueText))
-                    {
-                        valueText = null;
-                    }
-                    if (!double.TryParse(valueText, out num))
+                    if (!double.TryParse(valueText, out var num))
                     {
                         num = 0;
                     }
@@ -46,10 +45,6 @@ namespace CSVSplitter.Models
                 }
                 else
                 {
-                    if (!data.TryGetValue(option.ColName, out var valueText))
-                    {
-                        valueText = null;
-                    }
                     key.obj = valueText ?? "";
                 }
                 sortKeys[i] = key;
