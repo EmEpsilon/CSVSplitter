@@ -234,9 +234,11 @@ namespace CSVSplitter.Tests
             {
                 new SortOption("Id", false, true)
             });
+            var threshold = InvokeResolveParallelSortThreshold();
+            Assert.True(threshold >= 2);
 
-            var rows = Enumerable.Range(1, Const.PARALLEL_SORT_THRESHOLD)
-                .Select(i => CreateRow(("Id", (Const.PARALLEL_SORT_THRESHOLD - i + 1).ToString(CultureInfo.InvariantCulture))))
+            var rows = Enumerable.Range(1, threshold)
+                .Select(i => CreateRow(("Id", (threshold - i + 1).ToString(CultureInfo.InvariantCulture))))
                 .ToList();
             rows.ForEach(r => r.SetSortKey(comparer));
 
@@ -244,7 +246,7 @@ namespace CSVSplitter.Tests
 
             Assert.NotSame(rows, sorted);
             Assert.Equal("1", sorted.First().Data["Id"]?.ToString());
-            Assert.Equal(Const.PARALLEL_SORT_THRESHOLD.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
+            Assert.Equal(threshold.ToString(CultureInfo.InvariantCulture), sorted.Last().Data["Id"]?.ToString());
         }
 
         [Fact]
@@ -948,6 +950,20 @@ namespace CSVSplitter.Tests
         {
             var method = typeof(ConvertCommand).GetMethod("SortRows", BindingFlags.NonPublic | BindingFlags.Instance);
             return (List<SortCsvRow>)method.Invoke(command, new object[] { rows, comparer });
+        }
+
+        private static int InvokeResolveParallelSortThreshold()
+        {
+            var method = typeof(ConvertCommand).GetMethod(
+                "ResolveParallelSortThreshold",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            if (method == null)
+            {
+                throw new MissingMethodException(typeof(ConvertCommand).FullName, "ResolveParallelSortThreshold");
+            }
+
+            return (int)method.Invoke(null, null);
         }
 
         private static void SetPrivateField(object instance, string fieldName, object value)
