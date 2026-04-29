@@ -17,5 +17,7 @@ namespace CSVSplitter.Global
         public const int PARALLEL_SORT_THRESHOLD_MIN = 20_000;
         public const int PARALLEL_SORT_THRESHOLD_MAX = 200_000;
         public const int PARALLEL_SORT_THRESHOLD_PER_CORE = 8_000;
+        public const int IO_READ_BUFFER_SIZE = 128 * 1024;
+        public const int IO_WRITE_BUFFER_SIZE = 128 * 1024;
     }
 }

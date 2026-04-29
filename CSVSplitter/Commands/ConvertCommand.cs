@@ -41,6 +41,32 @@ namespace CSVSplitter.Commands
                 && this._viewModel.InputFiles.AreAllCsvFiles();
         }
 
+        private static StreamReader CreateOptimizedReader(string filePath, Encoding encoding)
+        {
+            var stream = new FileStream(filePath, new FileStreamOptions
+            {
+                Access = FileAccess.Read,
+                Mode = FileMode.Open,
+                Share = FileShare.Read,
+                BufferSize = Global.Const.IO_READ_BUFFER_SIZE,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+            return new StreamReader(stream, encoding, true, Global.Const.IO_READ_BUFFER_SIZE, false);
+        }
+
+        private static StreamWriter CreateOptimizedWriter(string filePath, Encoding encoding)
+        {
+            var stream = new FileStream(filePath, new FileStreamOptions
+            {
+                Access = FileAccess.Write,
+                Mode = FileMode.Create,
+                Share = FileShare.None,
+                BufferSize = Global.Const.IO_WRITE_BUFFER_SIZE,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+            return new StreamWriter(stream, encoding, Global.Const.IO_WRITE_BUFFER_SIZE, false);
+        }
+
         private List<string> outputFiles; // 非同期メソッド間で共有するための変数
         private HashSet<string> outputFilePathSet;
         private Dictionary<string, long> DicCountCsvFile;
@@ -195,7 +221,7 @@ namespace CSVSplitter.Commands
             long count = 0;
             if (!this.DicCountCsvFile.ContainsKey(inputFile))
             {
-                using (var reader = new StreamReader(inputFile, config.Encoding))
+                using (var reader = CreateOptimizedReader(inputFile, config.Encoding))
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
@@ -317,7 +343,7 @@ namespace CSVSplitter.Commands
             {
                 var list = new List<Models.SortCsvRow>();
                 var sortHeaders = comp.Options.Select(o => o.ColName).ToArray();
-                using (var reader = new StreamReader(inputFile, config.Encoding))
+                using (var reader = CreateOptimizedReader(inputFile, config.Encoding))
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
@@ -348,7 +374,7 @@ namespace CSVSplitter.Commands
 
                 list = SortRows(list, comp);
 
-                using (var writer = new StreamWriter(outputFile, false, config.Encoding))
+                using (var writer = CreateOptimizedWriter(outputFile, config.Encoding))
                 {
                     await writer.WriteAsync(rawHeader + config.NewLine);
                     foreach (var data in list)
@@ -370,7 +396,7 @@ namespace CSVSplitter.Commands
                 int countTmp = 0;
                 var list = new List<Models.SortCsvRow>();
                 var sortHeaders = comp.Options.Select(o => o.ColName).ToArray();
-                using (var reader = new StreamReader(inputFile, config.Encoding))
+                using (var reader = CreateOptimizedReader(inputFile, config.Encoding))
                 {
                     using (var csv = new CsvReader(reader, config))
                     {
@@ -400,7 +426,7 @@ namespace CSVSplitter.Commands
                             if (countTmp >= maxSortFileRecords)
                             {
                                 list = SortRows(list, comp);
-                                using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
+                                using (var writer = CreateOptimizedWriter(tmpFile.FilePath, config.Encoding))
                                 {
                                     await writer.WriteAsync(rawHeader + config.NewLine);
                                     int wkCount = 0;
@@ -436,7 +462,7 @@ namespace CSVSplitter.Commands
                     if(list.Count > 0)
                     {
                         list = SortRows(list, comp);
-                        using (var writer = new StreamWriter(tmpFile.FilePath, false, config.Encoding))
+                        using (var writer = CreateOptimizedWriter(tmpFile.FilePath, config.Encoding))
                         {
                             await writer.WriteAsync(rawHeader + config.NewLine);
                             int wkCount = 0;
@@ -497,7 +523,7 @@ namespace CSVSplitter.Commands
             }
 
             long countRecords = 0;
-            using (var writer = new StreamWriter(outputFile, false, config.Encoding))
+            using (var writer = CreateOptimizedWriter(outputFile, config.Encoding))
             {
                 await writer.WriteAsync(rawHeader + config.NewLine);
                 if (comp.isEmpty())
@@ -577,7 +603,7 @@ namespace CSVSplitter.Commands
             var splitHeaders = ccSplitInfo.Headers.ToArray();
 
             long countRecords = 0;
-            using (var reader = new StreamReader(inputFile, config.Encoding))
+            using (var reader = CreateOptimizedReader(inputFile, config.Encoding))
             {
                 using(var csv = new CsvReader(reader,config))
                 {
@@ -966,7 +992,18 @@ namespace CSVSplitter.Commands
         {
             this._filePath = prmFilePath;
             this._encoding = prmEncoding;
-            this._writer = new StreamWriter(prmFilePath, false, this._encoding);
+            this._writer = new StreamWriter(
+                new FileStream(prmFilePath, new FileStreamOptions
+                {
+                    Access = FileAccess.Write,
+                    Mode = FileMode.Create,
+                    Share = FileShare.None,
+                    BufferSize = Global.Const.IO_WRITE_BUFFER_SIZE,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }),
+                this._encoding,
+                Global.Const.IO_WRITE_BUFFER_SIZE,
+                false);
             this._buffer = new StringBuilder();
             this._bufferCount = 0;
         }
@@ -1006,10 +1043,21 @@ namespace CSVSplitter.Commands
         {
             if(!this._closed)
             {
-                this.Close();
+            this.Close();
             }
             this._filePath = prmFilePath;
-            this._writer = new StreamWriter(prmFilePath, false, this._encoding);
+            this._writer = new StreamWriter(
+                new FileStream(prmFilePath, new FileStreamOptions
+                {
+                    Access = FileAccess.Write,
+                    Mode = FileMode.Create,
+                    Share = FileShare.None,
+                    BufferSize = Global.Const.IO_WRITE_BUFFER_SIZE,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }),
+                this._encoding,
+                Global.Const.IO_WRITE_BUFFER_SIZE,
+                false);
             this._counter = 0;
             this._closed = false;
         }
@@ -1117,7 +1165,19 @@ namespace CSVSplitter.Commands
             this._filePath = prmFilePath;
             this._encoding = prmEncoding;
             this._csvConfig = csvConfig;
-            this._reader = new StreamReader(prmFilePath, this._encoding);
+            this._reader = new StreamReader(
+                new FileStream(prmFilePath, new FileStreamOptions
+                {
+                    Access = FileAccess.Read,
+                    Mode = FileMode.Open,
+                    Share = FileShare.Read,
+                    BufferSize = Global.Const.IO_READ_BUFFER_SIZE,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }),
+                this._encoding,
+                true,
+                Global.Const.IO_READ_BUFFER_SIZE,
+                false);
             this._csvReader = new CsvReader(this._reader,this._csvConfig);
             this._isHeaderInitialized = false;
             this._headerIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
