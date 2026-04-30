@@ -37,7 +37,12 @@ namespace CSVSplitter.Commands
             {
                 if (System.IO.Directory.Exists(this._viewModel.OutputFolder))
                 {
-                    System.Diagnostics.Process.Start(this._viewModel.OutputFolder);
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = this._viewModel.OutputFolder,
+                        UseShellExecute = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
                 }
             }
             catch (Exception e)
