@@ -647,7 +647,7 @@ namespace CSVSplitter.Commands
                             outputFiles.Add(outputFilePath);
                             ccOutput = new CCOutput(outputFilePath, config.Encoding);
                             ccOutput.HeaderData = ccHeaderData.List;
-                            await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                            await ccOutput.WriteHeaderAsync(rawHeader + config.NewLine);
                             outputByHeader.Add(headerKey, ccOutput);
                         }
                         
@@ -657,7 +657,7 @@ namespace CSVSplitter.Commands
                             var outputFilePath = GetOutputFilePath(baseFileName + ccOutput.GetJoinHeaderData(), extention, outputFolder);
                             outputFiles.Add(outputFilePath);
                             ccOutput.Reset(outputFilePath);
-                            await ccOutput.WriteAsync(rawHeader + config.NewLine);
+                            await ccOutput.WriteHeaderAsync(rawHeader + config.NewLine);
                         }
                         await ccOutput.WriteAsync(row);
                         countRecords++;
@@ -765,10 +765,27 @@ namespace CSVSplitter.Commands
             {
                 this.outputFiles = seedOutputFiles ?? new List<string>();
             }
+            else if (seedOutputFiles != null)
+            {
+                foreach (var path in seedOutputFiles)
+                {
+                    if (!this.outputFiles.Contains(path))
+                    {
+                        this.outputFiles.Add(path);
+                    }
+                }
+            }
 
             if (this.outputFilePathSet is null)
             {
                 this.outputFilePathSet = new HashSet<string>(this.outputFiles, StringComparer.OrdinalIgnoreCase);
+            }
+            else if (seedOutputFiles != null)
+            {
+                foreach (var path in seedOutputFiles)
+                {
+                    this.outputFilePathSet.Add(path);
+                }
             }
         }
 
@@ -1081,6 +1098,18 @@ namespace CSVSplitter.Commands
             }
             //await this._writer.WriteAsync(data);
             this._counter++;
+        }
+
+        public async Task WriteHeaderAsync(string data)
+        {
+            this._buffer.Append(data);
+            this._bufferCount++;
+            if (this._bufferCount >= Global.Const.WRITE_BUFFER_SIZE)
+            {
+                await this._writer.WriteAsync(this._buffer.ToString());
+                this._buffer.Clear();
+                this._bufferCount = 0;
+            }
         }
 
         public async Task WriteFlush()
